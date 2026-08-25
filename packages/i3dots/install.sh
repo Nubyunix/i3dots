@@ -1,9 +1,23 @@
 #!/usr/bin/env bash
 # i3dots/install.sh
 
-# 0. Cargar biblioteca de utilidades del core
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-source "$PROJECT_ROOT/core/lib/utils.sh"
+# 0. Directorios estándar (.config mode)
+INSTALL_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+TARGET_DIR="${DOTS_DIR:-$HOME/.config/i3dots}"
+
+# Si se ejecuta fuera de ~/.config/i3dots, copiar todo el contenido a ~/.config/i3dots
+if [ "$INSTALL_SRC" != "$TARGET_DIR" ]; then
+    mkdir -p "$TARGET_DIR"
+    cp -a "$INSTALL_SRC"/. "$TARGET_DIR/"
+fi
+
+PROJECT_ROOT="$TARGET_DIR"
+PACKAGE_DIR="$TARGET_DIR/packages/i3dots"
+CORE_DIR="$TARGET_DIR/core"
+STATE_DIR="$CORE_DIR/state"
+BIN_DIR="$CORE_DIR/bin"
+
+source "$CORE_DIR/lib/utils.sh"
 
 LOG_FILE="${LOG_FILE:-/tmp/dots_install.log}"
 echo -e "${GRAY}--- Inicio de instalación $(date) ---${NC}" > "$LOG_FILE"
@@ -12,7 +26,6 @@ echo -e "${GRAY}--- Inicio de instalación $(date) ---${NC}" > "$LOG_FILE"
 echo -e "${CYAN}${BOLD}▗▄▄▄▖▄▄▄▄ ▗▄▄▄   ▗▄▖▗▄▄▄▖▗▄▄▖\n  █     █ ▐▌  █ ▐▌ ▐▌ █ ▐▌\n  █  ▀▀▀█ ▐▌  █ ▐▌ ▐▌ █  ▝▀▚▖\n▗▄█▄▖▄▄▄█ ▐▙▄▄▀ ▝▚▄▞▘ █ ▗▄▄▞▘\n          by loonyx${NC}"
 
 # 1. Parseo de argumentos y persistencia de variante
-PACKAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VARIANT_ARG=""
 IS_OFFLINE=false
 CLI_WALL=""
@@ -272,7 +285,7 @@ fi
 
 # 7. Escribir configuraciones y variables locales
 print_step "Configurando persistencia de rutas en el sistema..."
-export PROJECT_ROOT="$(cd "$PACKAGE_DIR/../.." && pwd)"
+export PROJECT_ROOT="${TARGET_DIR:-$HOME/.config/i3dots}"
 export CURRENT_ENV="${CURRENT_ENV:-$(basename "$PACKAGE_DIR")}"
 export STATE_DIR="${STATE_DIR:-$PROJECT_ROOT/core/state}"
 touch "$PACKAGE_DIR/config/i3/conf.d/autostart.generated"
@@ -326,7 +339,7 @@ clean_old_links_in_dir() {
             [ -L "$link" ] || continue
             [[ "$(basename "$link")" == "." || "$(basename "$link")" == ".." ]] && continue
             target=$(readlink "$link")
-            if [[ "$target" == *"/packages/i3dots/"* ]]; then
+            if [[ "$target" == *"/packages/i3dots/"* || "$target" == *".config/i3dots/"* ]]; then
                 rm "$link"
             fi
         done

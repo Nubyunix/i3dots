@@ -377,8 +377,7 @@ hook_apply() {
 hook_save() {
     export CURRENT_ENV="${CURRENT_ENV:-i3dots}"
     if [ -z "$DISPLAY_STATE_DIR" ]; then
-        local SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        local BASE_DIR="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+        local BASE_DIR="${BASE_DIR:-$HOME/.config/i3dots}"
         local STATE_DIR="${STATE_DIR:-$BASE_DIR/core/state}"
         DISPLAY_STATE_DIR="$STATE_DIR/$CURRENT_ENV/display"
     fi
@@ -469,8 +468,8 @@ hook_post_apply() {
 }
 
 hook_init() {
-    local SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    bash "$SCRIPT_DIR/../../../../core/bin/engine_display.sh" --init
+    local BASE_DIR="${BASE_DIR:-$HOME/.config/i3dots}"
+    bash "$BASE_DIR/core/bin/engine_display.sh" --init
 }
 
 # Ejecución directa si no se está importando (sourced)

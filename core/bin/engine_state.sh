@@ -2,28 +2,12 @@
 # core/bin/engine_state.sh - Motor de persistencia y enrutador de estado genérico optimizado
 
 # 1. Resolver Directorios Base
-if [ -z "$BASE_DIR" ]; then
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    export BASE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-    export CORE_DIR="$BASE_DIR/core"
-    export BIN_DIR="$CORE_DIR/bin"
-    export STATE_DIR="$CORE_DIR/state"
-fi
-
-if [ -z "$CURRENT_ENV" ]; then
-    # Intentar detectar el primer paquete disponible en packages/
-    for dir in "$BASE_DIR/packages"/*; do
-        if [ -d "$dir" ] && [ -f "$dir/config.env" ]; then
-            export CURRENT_ENV="${dir##*/}"
-            break
-        fi
-    done
-fi
-
-if [ -z "$CURRENT_ENV" ]; then
-    echo "Error: No se pudo detectar CURRENT_ENV y no hay paquetes válidos en packages/" >&2
-    exit 1
-fi
+export BASE_DIR="${BASE_DIR:-$HOME/.config/i3dots}"
+export CORE_DIR="${CORE_DIR:-$BASE_DIR/core}"
+export BIN_DIR="${BIN_DIR:-$CORE_DIR/bin}"
+export STATE_DIR="${STATE_DIR:-$CORE_DIR/state}"
+export PACKAGES_DIR="${PACKAGES_DIR:-$BASE_DIR/packages}"
+export CURRENT_ENV="${CURRENT_ENV:-i3dots}"
 
 NO_APPLY=0
 if [ "$1" = "--no-apply" ]; then

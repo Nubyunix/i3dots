@@ -14,13 +14,9 @@ _mpv_set_prop() {
 }
 
 _resolve_daemon_path() {
-    local script_dir repo_root
-    script_dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"   # .../core/engines
-    repo_root="$(dirname "$(dirname "$script_dir")")"               # .../i3dots
-
     local local_bin="$HOME/.local/bin/live_wp_daemon"
+    local std="$HOME/.config/i3dots/packages/i3dots/bin/live_wp_daemon"
     local pkg="${PACKAGE_DIR:+$PACKAGE_DIR/bin/live_wp_daemon}"
-    local std="$repo_root/packages/i3dots/bin/live_wp_daemon"
 
     [[ -x "$local_bin" ]] && echo "$local_bin" || { [[ -x "$pkg" ]] && echo "$pkg" || echo "$std"; }
 }

@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 # hooks/components/polybar.sh - Hook de enlace y generación de estado para Polybar
 
-# 1. Asegurar Variables de Entorno y Directorios de Forma Dinámica
-if [ -z "$PROJECT_ROOT" ]; then
-    SCRIPT_PATH=$(readlink -f "${BASH_SOURCE[0]}")
-    export PROJECT_ROOT=$(cd "$(dirname "$SCRIPT_PATH")/../../../.." && pwd)
-fi
-export BASE_DIR="${BASE_DIR:-$PROJECT_ROOT}"
-export STATE_DIR="${STATE_DIR:-$PROJECT_ROOT/core/state}"
-export CURRENT_ENV="${CURRENT_ENV:-$(basename "$(cd "$(dirname "$SCRIPT_PATH")/../.." && pwd)")}"
+# 1. Asegurar Variables de Entorno y Directorios Base
+export BASE_DIR="${BASE_DIR:-$HOME/.config/i3dots}"
+export PROJECT_ROOT="$BASE_DIR"
+export STATE_DIR="${STATE_DIR:-$BASE_DIR/core/state}"
+export CURRENT_ENV="${CURRENT_ENV:-i3dots}"
+export PACKAGE_DIR="${PACKAGE_DIR:-$BASE_DIR/packages/$CURRENT_ENV}"
 BAR_STATE_DIR="$STATE_DIR/$CURRENT_ENV/bar"
 mkdir -p "$BAR_STATE_DIR"
 STATE_FILE="$BAR_STATE_DIR/state.env"

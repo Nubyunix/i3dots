@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 
 # dots - Gestor de Paquetes de Dotfiles Autocontenidos
-export BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export BASE_DIR="${BASE_DIR:-$HOME/.config/i3dots}"
+if [ ! -d "$BASE_DIR/packages" ] && [ -d "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/packages" ]; then
+    export BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 export CORE_DIR="$BASE_DIR/core"
 export PACKAGES_DIR="$BASE_DIR/packages"
 export BIN_DIR="$CORE_DIR/bin"

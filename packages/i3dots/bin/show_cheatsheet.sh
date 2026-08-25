@@ -9,8 +9,8 @@ if pkill -f "feh --title $TITLE" 2>/dev/null; then
 fi
 
 # 2. Localizar Imagen
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMG_PATH="$SCRIPT_DIR/../assets/cheatsheet.png"
+BASE_DIR="${BASE_DIR:-$HOME/.config/i3dots}"
+IMG_PATH="$BASE_DIR/packages/i3dots/assets/cheatsheet.png"
 
 
 if [ ! -f "$IMG_PATH" ]; then

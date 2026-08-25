@@ -2,39 +2,16 @@
 # core/bin/engine_display.sh - Motor de gestión de resoluciones universal optimizado
 
 # 1. Resolver Directorios y Fallbacks
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export BASE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-export CORE_DIR="$BASE_DIR/core"
+export BASE_DIR="${BASE_DIR:-$HOME/.config/i3dots}"
+export CORE_DIR="${CORE_DIR:-$BASE_DIR/core}"
+export STATE_DIR="${STATE_DIR:-$CORE_DIR/state}"
+export PACKAGES_DIR="${PACKAGES_DIR:-$BASE_DIR/packages}"
+export CURRENT_ENV="${CURRENT_ENV:-i3dots}"
+export PACKAGE_DIR="${PACKAGE_DIR:-$PACKAGES_DIR/$CURRENT_ENV}"
+export HOOK_DIR="${HOOK_DIR:-$PACKAGE_DIR/hooks}"
 
-if [ -z "$HOOK_DIR" ] || [ -z "$STATE_DIR" ]; then
-    export STATE_DIR="$CORE_DIR/state"
-    export PACKAGES_DIR="$BASE_DIR/packages"
-    
-    if [ -d "$PACKAGES_DIR" ]; then
-        for dir in "$PACKAGES_DIR"/*; do
-            if [ -f "$dir/config.env" ]; then
-                export CURRENT_ENV="$(basename "$dir")"
-                export PACKAGE_DIR="$dir"
-                source "$dir/config.env"
-                break
-            fi
-        done
-    fi
-fi
-
-if [ -z "$CURRENT_ENV" ]; then
-    # Intentar detectar el primer paquete disponible en packages/
-    for dir in "$BASE_DIR/packages"/*; do
-        if [ -d "$dir" ] && [ -f "$dir/config.env" ]; then
-            export CURRENT_ENV="${dir##*/}"
-            break
-        fi
-    done
-fi
-
-if [ -z "$CURRENT_ENV" ]; then
-    echo "Error: No se pudo detectar CURRENT_ENV en engine_display.sh" >&2
-    exit 1
+if [ -f "$PACKAGE_DIR/config.env" ]; then
+    source "$PACKAGE_DIR/config.env"
 fi
 
 # Ruta del hook de pantalla e importación
