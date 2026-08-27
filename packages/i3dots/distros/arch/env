@@ -3,16 +3,16 @@ export PKG_MANAGER="pacman"
 export PKG_UPDATE_CMD=""
 export PKG_INSTALL_CMD="-S --needed --noconfirm"
 export PKG_QUERY_CMD="pacman -Qq"
-export PKG_LIST="i3-wm polybar rofi kitty picom qt6ct lxappearance feh lxsession pipewire wireplumber libpulse xorg-setxkbmap brightnessctl playerctl maim xclip xdotool pcmanfm git curl wget unzip ttf-jetbrains-mono otf-font-awesome fontconfig imagemagick papirus-icon-theme fastfetch lua xsettingsd dash"
+export PKG_LIST="i3-wm polybar rofi kitty picom qt6ct lxappearance feh pipewire wireplumber libpulse xorg-setxkbmap brightnessctl playerctl maim xclip xdotool pcmanfm git curl wget unzip ttf-jetbrains-mono otf-font-awesome fontconfig imagemagick papirus-icon-theme fastfetch lua xsettingsd dash"
 export PKG_LIVE="mpv xwinwrap ffmpegthumbnailer socat"
 export PKG_BUILD="gcc"
 
-export POLKIT_AGENT="lxpolkit"
+export POLKIT_AGENT="/usr/lib/raven-polkit/raven-polkit-agent"
 export I3_FONT="JetBrainsMono Nerd Font"
 export OS_ICON=""
 
 # Mapeo de paquetes de servicios opcionales
-export PKG_SERVICE_POLKIT="lxsession"
+export PKG_SERVICE_POLKIT=""
 export PKG_SERVICE_XSETTINGSD="xsettingsd"
 
 

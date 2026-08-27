@@ -35,6 +35,7 @@ EXCLUDE_SERVICES="${EXCLUDE_SERVICES:-}"
 INTEGRATE_FM=""
 DEFAULT_FILE_MANAGER="pcmanfm"
 ENABLE_LIVE=true
+POLKIT_CHOICE="${POLKIT_CHOICE:-}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --offline) IS_OFFLINE=true; shift ;;
@@ -43,6 +44,22 @@ while [[ $# -gt 0 ]]; do
         --wallpaper-src) CLI_WALL_SRC="$2"; shift 2 ;;
         --exclude|-e) EXCLUDE_SERVICES="$2"; shift 2 ;;
         --file-manager|-fm) INTEGRATE_FM="$2"; shift 2 ;;
+        --polkit|-pk) POLKIT_CHOICE="$2"; shift 2 ;;
+        -h|--help)
+            echo "Uso: $(basename "$0") [variante] [opciones]"
+            echo ""
+            echo "Variantes disponibles: arch, debian, void"
+            echo ""
+            echo "Opciones:"
+            echo "  --polkit, -pk <agente>        Agente Polkit: raven, xfce, lxpolkit, gnome, mate, none"
+            echo "  --file-manager, -fm <gestor>  Gestor de archivos: pcmanfm, thunar, all, none"
+            echo "  --exclude, -e <servicios>     Excluir servicios (ej: polkit,xsettingsd)"
+            echo "  --wallpaper <ruta>            Fondo de pantalla inicial"
+            echo "  --no-live, -nl                Desactivar dependencias de live wallpaper"
+            echo "  --offline                     Modo sin conexión"
+            echo "  -h, --help                    Mostrar esta ayuda"
+            exit 0
+            ;;
         -*) shift ;;
         *) [ -z "$VARIANT_ARG" ] && VARIANT_ARG="$1"; shift ;;
     esac
@@ -73,6 +90,12 @@ fi
 
 # Cargar configuraciones del paquete
 [ -f "$PACKAGE_DIR/config.env" ] && source "$PACKAGE_DIR/config.env"
+
+# Configuración de agente Polkit
+if [[ "$POLKIT_CHOICE" == "raven"* ]]; then
+    POLKIT_AGENT="/usr/lib/raven-polkit/raven-polkit-agent"
+    [ -n "$PKG_SERVICE_POLKIT" ] && PKG_LIST=${PKG_LIST/ $PKG_SERVICE_POLKIT / }
+fi
 
 # Excluir servicios del autostart y la instalación
 AUTOSTART_CONF="$PACKAGE_DIR/config/i3/conf.d/autostart.conf"
@@ -280,6 +303,12 @@ else
         install_matugen_via_cargo
     fi
     rm -rf "$TEMP_MATUGEN"
+fi
+
+# 6.1 raven-polkit
+if [ "$POLKIT_AGENT" = "/usr/lib/raven-polkit/raven-polkit-agent" ] && [ ! -x "$POLKIT_AGENT" ] && [ "$IS_OFFLINE" != "true" ]; then
+    print_step "Instalando raven-polkit..."
+    run_elevated bash -c "mkdir -p /usr/lib/raven-polkit && curl -sL https://github.com/Derszi65g/raven-polkit/releases/download/0.1.4/raven-polkit-x86_64-linux-glibc.tar.gz | tar -xz -C /usr/lib/raven-polkit"
 fi
 
 # 7. Escribir configuraciones y variables locales
