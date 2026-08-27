@@ -44,7 +44,7 @@ else
     export BAR_ADAPTER="AC"
 fi
 
-export HAS_AUDIO=$(pactl info >/dev/null 2>&1 && echo "yes")
+export HAS_AUDIO=$(timeout 1 pactl info >/dev/null 2>&1 && echo "yes" || true)
 
 # Detectar sensor de temperatura (hwmon)
 export HWMON_PATH=""

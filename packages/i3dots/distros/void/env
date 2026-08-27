@@ -3,7 +3,7 @@ export PKG_MANAGER="xbps-install"
 export PKG_UPDATE_CMD="-Syu"
 export PKG_INSTALL_CMD="-Sy"
 export PKG_QUERY_CMD="xbps-query -l | sed -E 's/^ii //; s/-[0-9].*//'"
-export PKG_LIST="i3 pcmanfm polybar rofi kitty picom qt6ct lxappearance feh xfce-polkit pipewire wireplumber pulseaudio-utils setxkbmap brightnessctl playerctl maim xclip xdotool dmenu git curl wget unzip font-awesome6 fontconfig ImageMagick papirus-icon-theme fastfetch lua53 xsettingsd dash"
+export PKG_LIST="i3 pcmanfm polybar rofi kitty picom qt6ct lxappearance feh xfce-polkit pipewire wireplumber pulseaudio-utils setxkbmap brightnessctl playerctl maim xclip xdotool dmenu git curl wget unzip font-awesome6 fontconfig ImageMagick papirus-icon-theme adw-gtk3 fastfetch lua53 xsettingsd dash dunst"
 export PKG_LIVE="mpv xwinwrap-nk ffmpegthumbnailer socat"
 export PKG_BUILD="gcc libX11-devel"
 

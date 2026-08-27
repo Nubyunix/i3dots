@@ -13,7 +13,7 @@ STATE_FILE="$BAR_STATE_DIR/state.env"
 
 # 0. Protocolo de Consulta para Frontends
 if [ "$1" == "--query" ]; then
-    CUR_TYPE="${2:-$(source "$STATE_FILE" 2>/dev/null && echo "$type" || echo "polybar_antigua")}"
+    CUR_TYPE="${2:-$(source "$STATE_FILE" 2>/dev/null && echo "$type" || echo "polybar_underline")}"
     CUR_TYPE=$(echo "$CUR_TYPE" | tr -d '[:space:]')
     THEME_SRC="$PACKAGE_DIR/config/polybar/$CUR_TYPE"
     
@@ -27,7 +27,7 @@ if [ "$1" == "--query" ]; then
     fi
 
     echo "themes_dir=$PACKAGE_DIR/config/polybar"
-    echo "default_theme=polybar_antigua"
+    echo "default_theme=polybar_underline"
     echo "primary_key=type"
     echo "variant_keys=mode"
     echo "supported_options=$SUPPORTED"
@@ -37,9 +37,9 @@ fi
 # 1. Cargar Estado Plano
 STYLE="square"
 POS="bottom"
-TRANS="true"
+TRANS="false"
 HEIGHT="15pt"
-TYPE="polybar_antigua"
+TYPE="polybar_underline"
 MODE="solid"
 ROFI_STYLE="solid"
 SOLID_LINE="false"
@@ -233,7 +233,6 @@ font-1 = "Symbols Nerd Font:size=$F_CURV;$F_CURV_OFFSET"
 font-2 = "JetBrainsMono Nerd Font Mono:size=$F_TEXT:antialias=false;$F_OFFSET_TEXT"
 font-rofi = "$F_ROFI_NAME:size=$F_ROFI_SIZE;$R_ROFI_OFFSET"
 font-extra = "JetBrainsMono Nerd Font Mono:size=$F_EXTRA;$F_OFFSET_TEXT"
-font-firacode = "FiraCode Nerd Font:size=$F_ICON;$F_OFFSET_TEXT"
 font-symbols = "Symbols Nerd Font Mono:size=$F_SYM;$F_OFFSET_SYM"
 font-large = "JetBrainsMono Nerd Font Mono:size=$((F_SYM + 2));$F_OFFSET_LARGE"
 module-padding = 1

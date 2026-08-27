@@ -8,7 +8,7 @@ TARGET_DIR="${DOTS_DIR:-$HOME/.config/i3dots}"
 # Si se ejecuta fuera de ~/.config/i3dots, copiar todo el contenido a ~/.config/i3dots
 if [ "$INSTALL_SRC" != "$TARGET_DIR" ]; then
     mkdir -p "$TARGET_DIR"
-    cp -a "$INSTALL_SRC"/. "$TARGET_DIR/"
+    cp -a --remove-destination "$INSTALL_SRC"/. "$TARGET_DIR/"
 fi
 
 PROJECT_ROOT="$TARGET_DIR"
@@ -172,7 +172,6 @@ mkdir -p ~/.local/share/fonts
 
 fonts_list=(
     "JetBrainsMonoNerd|https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/JetBrainsMono.zip"
-    "FiraCodeNerd|https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/FiraCode.zip"
     "SymbolsNerdFont|https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/NerdFontsSymbolsOnly.zip"
 )
 

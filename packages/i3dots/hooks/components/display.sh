@@ -340,7 +340,11 @@ hook_apply() {
     if [ -n "$resolution" ]; then
         args+=(--mode "$resolution")
     fi
-    if [ -n "$rate" ]; then
+    if [[ -z "$rate" || "$rate" == [Aa]uto || ! "$rate" =~ ^[0-9]+(\.[0-9]+)?$ ]] && [ -n "$resolution" ]; then
+        hook_query_rates "$output" "$resolution"
+        rate=$(head -n 1 <<< "$RET_LIST" | tr -d '[:space:]')
+    fi
+    if [[ "$rate" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
         args+=(--rate "$rate")
     fi
     local scale_filter="${filter:-${DISP_SCALE_FILTER:-}}"
@@ -422,7 +426,13 @@ hook_save() {
             local cmd="xrandr --output $output"
             cmd="$cmd --mode $resolution"
             
-            [ -n "$rate" ] && cmd="$cmd --rate $rate"
+            if [[ -z "$rate" || "$rate" == [Aa]uto || ! "$rate" =~ ^[0-9]+(\.[0-9]+)?$ ]] && [ -n "$resolution" ]; then
+                hook_query_rates "$output" "$resolution"
+                rate=$(head -n 1 <<< "$RET_LIST" | tr -d '[:space:]')
+            fi
+            if [[ "$rate" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+                cmd="$cmd --rate $rate"
+            fi
             
             local scale_filter="${filter:-${DISP_SCALE_FILTER:-}}"
             if [ "$scale_filter" = "ninguno" ] || [ "$scale_filter" = "none" ]; then
