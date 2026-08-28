@@ -26,10 +26,15 @@ if [ "$1" == "--query" ]; then
         done < "$THEME_SRC/options.conf"
     fi
 
+    VAR_KEYS=""
+    if [ "$CUR_TYPE" == "polybar_underline" ] || [ -f "$THEME_SRC/modules_underline.ini" ]; then
+        VAR_KEYS="mode"
+    fi
+
     echo "themes_dir=$PACKAGE_DIR/config/polybar"
     echo "default_theme=polybar_underline"
     echo "primary_key=type"
-    echo "variant_keys=mode"
+    echo "variant_keys=$VAR_KEYS"
     echo "supported_options=$SUPPORTED"
     exit 0
 fi
@@ -112,10 +117,14 @@ if [ "$MODE" == "underline" ] || [ "$SOLID_LINE" == "true" ]; then
     LINE_SIZE=$(( H_NUM / 6 )); [[ $LINE_SIZE -lt 2 ]] && LINE_SIZE=2
 fi
 
+COMP_BORDER_LEFT=0
+COMP_BORDER_RIGHT=0
 if [ "$TYPE" == "polybar_compact" ]; then
     if [ "$MARGIN_TYPE" == "pinned" ]; then
         COMP_BORDER_TOP=0
         COMP_BORDER_BOTTOM=0
+        COMP_BORDER_LEFT=0
+        COMP_BORDER_RIGHT=0
         if [ "$TRANS" == "false" ]; then
             COMP_HEIGHT="$(( H_NUM + 3 ))pt"
             COMP_LINE_SIZE="3pt"
@@ -125,6 +134,8 @@ if [ "$TYPE" == "polybar_compact" ]; then
         fi
     else
         # Modo floating (flotante)
+        COMP_BORDER_LEFT=180
+        COMP_BORDER_RIGHT=180
         if [ "$TRANS" == "false" ]; then
             COMP_HEIGHT="$(( H_NUM + 3 ))pt"
             COMP_LINE_SIZE="3pt"
@@ -152,6 +163,8 @@ else
     COMP_LINE_SIZE="${LINE_SIZE}pt"
     COMP_BORDER_TOP=5
     COMP_BORDER_BOTTOM=5
+    COMP_BORDER_LEFT=0
+    COMP_BORDER_RIGHT=0
 fi
 
 # Coeficientes proporcionales
@@ -183,10 +196,16 @@ fi
 # Colores y Estilos de Módulos
 BG_COLOR=$([ "$TRANS" == "false" ] && echo "\${colors.background-solid}" || echo "#00000000")
 COMPACT_BG_COLOR=$([ "$TRANS" == "false" ] && echo "\${colors.compact-bar-background}" || echo "#00000000")
-if [ "$TRANS" == "false" ]; then
-    P_TRANS="false"
-else
-    P_TRANS=$([ "$TRANS_TYPE" == "pseudo" ] && echo "true" || echo "false")
+P_TRANS=$([ "$TRANS_TYPE" == "pseudo" ] && echo "true" || echo "false")
+
+# Si la barra tiene pseudo-transparencia y hay un live wallpaper activo, asegurar fondo en ventana raíz
+if [ "$TRANS_TYPE" == "pseudo" ]; then
+    if [ "$TRANS" == "true" ] || [ "$THEME_NAME" == "polybar_compact" ]; then
+        if pgrep -f 'mpv.*--x11-name=mpv-wallpaper' &>/dev/null; then
+            _c_src="$HOME/.config/i3dots/core/state/i3dots/wallpaper/color_source"
+            [[ -f "$_c_src" ]] && command -v feh &>/dev/null && feh --bg-fill "$_c_src" &>/dev/null &
+        fi
+    fi
 fi
 
 # Definir esquema de resaltado
@@ -226,6 +245,8 @@ background = $BG_COLOR
 compact-background = $COMPACT_BG_COLOR
 border-top = ${COMP_BORDER_TOP}pt
 border-bottom = ${COMP_BORDER_BOTTOM}pt
+border-left = ${COMP_BORDER_LEFT}
+border-right = ${COMP_BORDER_RIGHT}
 line-size = $COMP_LINE_SIZE
 comp-modules-hidden = $([ "$MODULES_VISIBILITY" == "visible" ] && echo "false" || echo "true")
 font-0 = "JetBrainsMono Nerd Font Mono:style=Bold:size=$F_TEXT;$F_OFFSET_TEXT"

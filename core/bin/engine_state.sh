@@ -142,14 +142,19 @@ set_state_value() {
         
         # 2. Aplicar el cambio de identidad
         STATE_MAP["$KEY"]="$VAL"
-        local new_suffix=$(get_identity_suffix)
-        
+
         # 3. Cargar/Restaurar opciones bajo la nueva identidad
         local new_query=$(bash "$COMP_HOOK" --query "${STATE_MAP[type]}" 2>/dev/null)
         local new_opts=""
+        PRIMARY_KEY="type"
+        VARIANT_KEYS=""
         while IFS='=' read -r k v; do
-            [ "$k" == "supported_options" ] && new_opts="$v"
+            [[ "$k" == "primary_key" ]] && PRIMARY_KEY="$v"
+            [[ "$k" == "variant_keys" ]] && VARIANT_KEYS="${v//,/ }"
+            [[ "$k" == "supported_options" ]] && new_opts="$v"
         done <<< "$new_query"
+
+        local new_suffix=$(get_identity_suffix)
         
         declare -A new_keys
         if [ -n "$new_opts" ]; then
@@ -164,6 +169,11 @@ set_state_value() {
                 for vk in $VARIANT_KEYS; do [[ "$opt_key" == "$vk" ]] && is_vk=1; done
                 [[ "$is_vk" -eq 1 ]] && continue
                 
+                # Preservar preferencia de transparency_type global para evitar revertir a real
+                if [ "$opt_key" == "transparency_type" ] && [ -n "${STATE_MAP[transparency_type]}" ]; then
+                    continue
+                fi
+
                 local saved_key="${opt_key}${new_suffix}"
                 local saved_val="${STATE_MAP[$saved_key]}"
                 if [ -n "$saved_val" ]; then
@@ -190,6 +200,15 @@ set_state_value() {
     else
         # Actualización de opción normal
         STATE_MAP["$KEY"]="$VAL"
+
+        # Si se cambia transparency_type, sincronizarlo globalmente para todos los temas
+        if [ "$KEY" == "transparency_type" ]; then
+            for k in "${!STATE_MAP[@]}"; do
+                if [[ "$k" == transparency_type* ]]; then
+                    STATE_MAP["$k"]="$VAL"
+                fi
+            done
+        fi
         
         # Persistencia bajo la identidad actual (Omitir si es llave de identidad)
         local is_id_key=0
