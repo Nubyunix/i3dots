@@ -14,5 +14,6 @@ export OS_ICON=""
 # Mapeo de paquetes de servicios opcionales
 export PKG_SERVICE_POLKIT="lxpolkit"
 export PKG_SERVICE_XSETTINGSD="xsettingsd"
+export PKG_OPTIONAL_NETWORK="network-manager"
 
 

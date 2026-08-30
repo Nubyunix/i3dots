@@ -45,6 +45,7 @@ while [[ $# -gt 0 ]]; do
         --exclude|-e) EXCLUDE_SERVICES="$2"; shift 2 ;;
         --file-manager|-fm) INTEGRATE_FM="$2"; shift 2 ;;
         --polkit|-pk) POLKIT_CHOICE="$2"; shift 2 ;;
+        --network) INSTALL_NETWORK=true; shift ;;
         -h|--help)
             echo "Uso: $(basename "$0") [variante] [opciones]"
             echo ""
@@ -56,6 +57,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --exclude, -e <servicios>     Excluir servicios (ej: polkit,xsettingsd)"
             echo "  --wallpaper <ruta>            Fondo de pantalla inicial"
             echo "  --no-live, -nl                Desactivar dependencias de live wallpaper"
+            echo "  --network                     Instalar gestor de red opcional (NetworkManager)"
             echo "  --offline                     Modo sin conexión"
             echo "  -h, --help                    Mostrar esta ayuda"
             exit 0
@@ -118,6 +120,12 @@ fi
 if [ "$ENABLE_LIVE" = "true" ] && [ -n "$PKG_LIVE" ]; then
     PKG_LIST="$PKG_LIST $PKG_LIVE"
     print_sub "Live wallpaper habilitado (mpv + xwinwrap)."
+fi
+
+# Agregar NetworkManager si se solicita explícitamente
+if [ "$INSTALL_NETWORK" = "true" ] && [ -n "$PKG_OPTIONAL_NETWORK" ]; then
+    PKG_LIST="$PKG_LIST $PKG_OPTIONAL_NETWORK"
+    print_sub "Gestor de red NetworkManager habilitado."
 fi
 
 # Cargar dependencias de compilación si falta algún precompilado

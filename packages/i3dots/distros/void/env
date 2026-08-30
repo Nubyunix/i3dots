@@ -14,6 +14,7 @@ export OS_ICON=""
 # Mapeo de paquetes de servicios opcionales
 export PKG_SERVICE_POLKIT="raven-polkit"
 export PKG_SERVICE_XSETTINGSD="xsettingsd"
+export PKG_OPTIONAL_NETWORK="NetworkManager"
 
 export POWERMENU_CMD_SHUTDOWN="loginctl poweroff"
 export POWERMENU_CMD_REBOOT="loginctl reboot"
