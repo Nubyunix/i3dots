@@ -199,13 +199,38 @@ function common.check_and_clean_backup(backup_dir, ram_dir, clean_pattern)
 end
 
 function common.create_backup(original_dir, backup_dir, exclusions, color_regex)
-    local excl   = table.concat(exclusions, " ")
+    local excl = table.concat(exclusions, " ")
+
+    -- Paso 1: Copiar archivos reales que contengan el color.
     local find_c = 'find -L . -type f -path "*/places/*" ' .. excl
     local grep_c = 'grep -lE "' .. color_regex .. '"'
-    local cp_c   = 'xargs cp -a --parents -t ' .. backup_dir .. '/'
-    os.execute('cd ' .. original_dir .. ' && ' .. find_c
-        .. ' -print0 2>/dev/null | xargs -0 ' .. grep_c
-        .. ' 2>/dev/null | ' .. cp_c .. ' 2>/dev/null')
+    local cp_c = 'xargs cp -a --parents -t ' .. backup_dir .. '/'
+    local cmd1 = 'cd ' .. original_dir .. ' && ' .. find_c .. ' -print0 2>/dev/null | xargs -0 ' .. grep_c .. ' 2>/dev/null | ' .. cp_c .. ' 2>/dev/null || true'
+
+    -- Paso 2: Copiar symlinks explícitamente, pero ignorando los tamaños pequeños para no romper el fallback monocromo de GTK.
+    local cmd2 = 'cd ' .. original_dir .. ' && for d in */places; do if [ -d "$d" ]; then case "$d" in *16x16*|*22x22*|*24x24*|*symbolic*|*@2x*) continue ;; esac; find "$d" -maxdepth 1 -type l -exec cp -a --parents -t ' .. backup_dir .. '/ {} + 2>/dev/null || true; fi; done || true'
+
+    -- Paso 3: Normalizar los symlinks en el backup para que siempre apunten a la versión azul
+    -- independientemente de si el usuario aplicó 'papirus-folders' con otro color.
+    local cmd3 = [[
+    find ]] .. backup_dir .. [[ -type l -exec sh -c '
+        colors="black|brown|carmine|cyan|dark-cyan|green|grey|indigo|magenta|nordic|orange|palebrown|paleorange|pink|red|teal|violet|white|yellow|yaru"
+        for link; do
+            target=$(readlink "$link")
+            case "$target" in
+                *-blue-*) ;;
+                *-*) 
+                    new_target=$(echo "$target" | sed -E "s/-($colors)(-|\.svg)/-blue\2/")
+                    if [ "$new_target" != "$target" ]; then
+                        ln -sf "$new_target" "$link"
+                    fi
+                    ;;
+            esac
+        done
+    ' sh {} + 2>/dev/null || true
+    ]]
+
+    common.sh_batch({ cmd1, cmd2, cmd3 })
 end
 
 function common.is_ram_populated(ram_dir)
