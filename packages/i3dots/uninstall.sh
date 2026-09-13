@@ -50,6 +50,7 @@ targets=(
     "$HOME/.local/bin/live_wp_daemon"
     "$HOME/.local/bin/polybar_autohide"
     "$HOME/.local/bin/xic"
+    "$HOME/.local/bin/network_dmenu"
     "$HOME/.local/share/file-manager/actions/i3dots-wallpaper.desktop"
 )
 

@@ -467,6 +467,7 @@ done
 safe_link "$PACKAGE_DIR/bin/toggle_autohide.sh" "$HOME/.local/bin/toggle_autohide.sh"
 safe_link "$PACKAGE_DIR/bin/toggle_borders.sh" "$HOME/.local/bin/toggle_borders.sh"
 safe_link "$PACKAGE_DIR/bin/sys_control.sh" "$HOME/.local/bin/sys_control.sh"
+safe_link "$PACKAGE_DIR/bin/rofi_network.lua" "$HOME/.local/bin/network_dmenu"
 
 export PATH="$HOME/.local/bin:$PATH"
 
