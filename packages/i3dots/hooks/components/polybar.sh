@@ -120,11 +120,11 @@ fi
 COMP_BORDER_LEFT=0
 COMP_BORDER_RIGHT=0
 if [ "$TYPE" == "polybar_compact" ]; then
+    COMP_BORDER_LEFT=180
+    COMP_BORDER_RIGHT=180
     if [ "$MARGIN_TYPE" == "pinned" ]; then
         COMP_BORDER_TOP=0
         COMP_BORDER_BOTTOM=0
-        COMP_BORDER_LEFT=0
-        COMP_BORDER_RIGHT=0
         if [ "$TRANS" == "false" ]; then
             COMP_HEIGHT="$(( H_NUM + 3 ))pt"
             COMP_LINE_SIZE="3pt"
@@ -134,8 +134,6 @@ if [ "$TYPE" == "polybar_compact" ]; then
         fi
     else
         # Modo floating (flotante)
-        COMP_BORDER_LEFT=180
-        COMP_BORDER_RIGHT=180
         if [ "$TRANS" == "false" ]; then
             COMP_HEIGHT="$(( H_NUM + 3 ))pt"
             COMP_LINE_SIZE="3pt"
