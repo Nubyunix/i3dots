@@ -2,15 +2,20 @@
 # powermenu.sh - Módulo core "inteligentemente tonto"
 # Gestiona las opciones de apagado/reinicio de forma agnóstica.
 
-# 1. Configuración del paquete (config.env)
+# 1. Configuración del paquete (con fallbacks autónomos)
 BIN="${POWERMENU_BIN:-rofi}"
-ARGS=(${POWERMENU_ARGS})
+ARGS=(${POWERMENU_ARGS:--theme $HOME/.config/rofi/themes/powermenu.rasi})
 
-# Etiquetas (Labels) - El paquete decide si usa iconos o texto
-L_SHUTDOWN="${POWERMENU_LABEL_SHUTDOWN:-Shutdown}"
-L_REBOOT="${POWERMENU_LABEL_REBOOT:-Reboot}"
-L_SUSPEND="${POWERMENU_LABEL_SUSPEND:-Suspend}"
-L_LOGOUT="${POWERMENU_LABEL_LOGOUT:-Logout}"
+# Etiquetas (Labels)
+L_SHUTDOWN="${POWERMENU_LABEL_SHUTDOWN:-󰐥}"
+L_REBOOT="${POWERMENU_LABEL_REBOOT:-󰑓}"
+L_SUSPEND="${POWERMENU_LABEL_SUSPEND:-󰖔}"
+L_LOGOUT="${POWERMENU_LABEL_LOGOUT:-󰿅}"
+
+CMD_SHUTDOWN="${POWERMENU_CMD_SHUTDOWN:-systemctl poweroff}"
+CMD_REBOOT="${POWERMENU_CMD_REBOOT:-systemctl reboot}"
+CMD_SUSPEND="${POWERMENU_CMD_SUSPEND:-systemctl suspend}"
+CMD_LOGOUT="${POWERMENU_CMD_LOGOUT:-i3-msg exit}"
 
 # 2. Control de Flujo Rofi
 if [[ -z "$ROFI_LIST_MODE" && $# -eq 0 ]]; then
@@ -30,10 +35,10 @@ else
     [[ -z "$CHOSEN" ]] && exit 1
 
     case "$CHOSEN" in
-        "$L_SHUTDOWN") [ -n "$POWERMENU_CMD_SHUTDOWN" ] && eval "$POWERMENU_CMD_SHUTDOWN" ;;
-        "$L_REBOOT")   [ -n "$POWERMENU_CMD_REBOOT" ]   && eval "$POWERMENU_CMD_REBOOT" ;;
-        "$L_SUSPEND")  [ -n "$POWERMENU_CMD_SUSPEND" ]  && eval "$POWERMENU_CMD_SUSPEND" ;;
-        "$L_LOGOUT")   [ -n "$POWERMENU_CMD_LOGOUT" ]   && eval "$POWERMENU_CMD_LOGOUT" ;;
+        "$L_SHUTDOWN") [ -n "$CMD_SHUTDOWN" ] && eval "$CMD_SHUTDOWN" ;;
+        "$L_REBOOT")   [ -n "$CMD_REBOOT" ]   && eval "$CMD_REBOOT" ;;
+        "$L_SUSPEND")  [ -n "$CMD_SUSPEND" ]  && eval "$CMD_SUSPEND" ;;
+        "$L_LOGOUT")   [ -n "$CMD_LOGOUT" ]   && eval "$CMD_LOGOUT" ;;
     esac
     exit 0
 fi

@@ -15,6 +15,7 @@ export OS_ICON=""
 export PKG_SERVICE_POLKIT="raven-polkit"
 export PKG_SERVICE_XSETTINGSD="xsettingsd"
 export PKG_OPTIONAL_NETWORK="NetworkManager"
+export PKG_OPTIONAL_CAVA="cava"
 
 export POWERMENU_CMD_SHUTDOWN="loginctl poweroff"
 export POWERMENU_CMD_REBOOT="loginctl reboot"

@@ -15,6 +15,7 @@ packages/*/dotfiles/kitty/colors.conf
 packages/*/dotfiles/matugen/wallpaper.txt
 packages/*/dotfiles/qt6ct/colors/matugen.conf
 packages/*/dotfiles/rofi/themes/shared/colors.rasi
+packages/*/dotfiles/cava/themes/matugen
 packages/*/dotfiles/waybar/colors.css
 packages/*/dotfiles/polybar_base/colors.ini
 packages/*/dotfiles/polybar_base/user_configs.ini.bak
@@ -41,6 +42,7 @@ packages/i3dots/config/i3/current
 packages/i3dots/config/i3/current_static
 packages/i3dots/config/i3/wall
 packages/i3dots/config/dunst/dunstrc
+packages/i3dots/config/cava/themes/matugen
 packages/i3dots/config/qt6ct/qt6ct.conf
 packages/i3dots/config/fastfetch/logo.txt
 # i3dots: Configuración de hardware dinámica

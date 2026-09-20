@@ -724,8 +724,10 @@ if [[ "$USE_CLI" -eq 1 ]]; then
 else
     # Modo Gráfico (GUI - Rofi con Grid de Imágenes)
     SEL_BIN="${WP_SEL_BIN:-rofi}"
-    SEL_ARGS=(${WP_SEL_ARGS:--dmenu -p "Wallpaper" -theme "${ROFI_THEME}"})
+    SEL_THEME="${WALL_SEL_THEME:-$HOME/.config/rofi/themes/WallSelect.rasi}"
+    SEL_ARGS=(${WP_SEL_ARGS:--dmenu -p "Wallpaper" -theme "${SEL_THEME}"})
     LINE_TMPL="${WP_SEL_LINE_TMPL:-%f\x00icon\x1f%p}"
+    WP_SEL_STYLE="${WP_SEL_STYLE:--theme-str 'element-icon{size:450px;} element-text{horizontal-align:0.5;}'}"
 
     [[ -d "$THUMB_DIR" ]] || mkdir -p "$THUMB_DIR"
 

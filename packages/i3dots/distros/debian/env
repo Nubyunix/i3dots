@@ -15,5 +15,6 @@ export OS_ICON=""
 export PKG_SERVICE_POLKIT="lxpolkit"
 export PKG_SERVICE_XSETTINGSD="xsettingsd"
 export PKG_OPTIONAL_NETWORK="network-manager"
+export PKG_OPTIONAL_CAVA="cava"
 
 

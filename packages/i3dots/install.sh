@@ -46,6 +46,7 @@ while [[ $# -gt 0 ]]; do
         --file-manager|-fm) INTEGRATE_FM="$2"; shift 2 ;;
         --polkit|-pk) POLKIT_CHOICE="$2"; shift 2 ;;
         --network) INSTALL_NETWORK=true; shift ;;
+        --cava) INSTALL_CAVA=true; shift ;;
         -h|--help)
             echo "Uso: $(basename "$0") [variante] [opciones]"
             echo ""
@@ -58,6 +59,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --wallpaper <ruta>            Fondo de pantalla inicial"
             echo "  --no-live, -nl                Desactivar dependencias de live wallpaper"
             echo "  --network                     Instalar gestor de red opcional (NetworkManager)"
+            echo "  --cava                        Instalar visualizador de audio opcional (Cava)"
             echo "  --offline                     Modo sin conexión"
             echo "  -h, --help                    Mostrar esta ayuda"
             exit 0
@@ -126,6 +128,12 @@ fi
 if [ "$INSTALL_NETWORK" = "true" ] && [ -n "$PKG_OPTIONAL_NETWORK" ]; then
     PKG_LIST="$PKG_LIST $PKG_OPTIONAL_NETWORK"
     print_sub "Gestor de red NetworkManager habilitado."
+fi
+
+# Agregar Cava si se solicita explícitamente
+if [ "$INSTALL_CAVA" = "true" ] && [ -n "$PKG_OPTIONAL_CAVA" ]; then
+    PKG_LIST="$PKG_LIST $PKG_OPTIONAL_CAVA"
+    print_sub "Visualizador de audio Cava habilitado."
 fi
 
 # Cargar dependencias de compilación si falta algún precompilado
@@ -468,6 +476,11 @@ safe_link "$PACKAGE_DIR/bin/toggle_autohide.sh" "$HOME/.local/bin/toggle_autohid
 safe_link "$PACKAGE_DIR/bin/toggle_borders.sh" "$HOME/.local/bin/toggle_borders.sh"
 safe_link "$PACKAGE_DIR/bin/sys_control.sh" "$HOME/.local/bin/sys_control.sh"
 safe_link "$PACKAGE_DIR/bin/rofi_network.lua" "$HOME/.local/bin/network_dmenu"
+safe_link "$PACKAGE_DIR/bin/bar_menu.sh" "$HOME/.local/bin/bar_menu.sh"
+safe_link "$PACKAGE_DIR/bin/wall_menu.sh" "$HOME/.local/bin/wall_menu.sh"
+safe_link "$PACKAGE_DIR/bin/show_cheatsheet.sh" "$HOME/.local/bin/show_cheatsheet.sh"
+safe_link "$CORE_DIR/bin/powermenu.sh" "$HOME/.local/bin/powermenu.sh"
+safe_link "$CORE_DIR/bin/engine_display.sh" "$HOME/.local/bin/engine_display.sh"
 
 export PATH="$HOME/.local/bin:$PATH"
 

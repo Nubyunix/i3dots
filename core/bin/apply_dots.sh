@@ -14,25 +14,19 @@ done
 
 # 2. Aplicar Componentes Secuenciales (pesados, sin competencia)
 for component in $SEQUENTIAL_COMPONENTS; do
-    var_name="COMPONENT_${component^^}"
-    value="${!var_name}"
-    [[ -z "$value" ]] && continue
-
     component_hook="$HOOK_DIR/components/${component}.sh"
     if [ -f "$component_hook" ]; then
-        source "$component_hook" "$value"
+        var_name="COMPONENT_${component^^}"
+        source "$component_hook" "${!var_name}"
     fi
 done
 
 # 3. Aplicar Componentes Paralelos (ligeros, tras los secuenciales)
 for component in $MANAGED_COMPONENTS; do
-    var_name="COMPONENT_${component^^}"
-    value="${!var_name}"
-    [[ -z "$value" ]] && continue
-
     component_hook="$HOOK_DIR/components/${component}.sh"
     if [ -f "$component_hook" ]; then
-        source "$component_hook" "$value" &
+        var_name="COMPONENT_${component^^}"
+        source "$component_hook" "${!var_name}" &
     fi
 done
 wait # Esperar a que todos terminen antes del hook final

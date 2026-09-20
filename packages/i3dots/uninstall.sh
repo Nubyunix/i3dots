@@ -41,6 +41,7 @@ targets=(
     "$HOME/.config/matugen"
     "$HOME/.config/fastfetch"
     "$HOME/.config/polybar"
+    "$HOME/.config/cava"
     "$HOME/.config/xsettingsd"
     "$HOME/.gtkrc-2.0"
     "$HOME/.local/bin/recolor_folders"
@@ -51,6 +52,11 @@ targets=(
     "$HOME/.local/bin/polybar_autohide"
     "$HOME/.local/bin/xic"
     "$HOME/.local/bin/network_dmenu"
+    "$HOME/.local/bin/bar_menu.sh"
+    "$HOME/.local/bin/wall_menu.sh"
+    "$HOME/.local/bin/show_cheatsheet.sh"
+    "$HOME/.local/bin/powermenu.sh"
+    "$HOME/.local/bin/engine_display.sh"
     "$HOME/.local/share/file-manager/actions/i3dots-wallpaper.desktop"
 )
 
