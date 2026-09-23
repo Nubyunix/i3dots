@@ -466,12 +466,18 @@ hook_query() {
 }
 
 hook_post_apply() {
-    # Ajustar wallpaper usando el motor activo (si no se pide omitir)
+    # 1. Recargar i3 para ajustar geometría y workspaces a la nueva resolución
+    command -v i3-msg &>/dev/null && i3-msg reload >/dev/null 2>&1
+
+    # 2. Ajustar wallpaper usando el motor activo (si no se pide omitir)
     if [ "$NO_WALLPAPER" != "true" ] && [ -f "$HOME/.config/i3/wall" ]; then
-        ( wp_select.sh -C "$(cat "$HOME/.config/i3/wall")" & )
+        local wp_bin="${CORE_DIR:-$BASE_DIR/core}/bin/wp_select.sh"
+        [ ! -x "$wp_bin" ] && wp_bin="$HOME/.local/bin/wp_select.sh"
+        [ ! -x "$wp_bin" ] && wp_bin="wp_select.sh"
+        ( "$wp_bin" -C "$(cat "$HOME/.config/i3/wall")" & )
     fi
     
-    # Relanzar Polybar de forma directa
+    # 3. Relanzar Polybar de forma directa
     if [ -x "$HOME/.config/polybar/launch.sh" ]; then
         bash "$HOME/.config/polybar/launch.sh" >/tmp/polybar.log 2>&1 &
     fi

@@ -3,6 +3,15 @@
 # apply_dots.sh - Aplicador de componentes y hooks inteligente
 # Consume: -E <hook>
 
+# 0. Directorios y fallbacks base
+export BASE_DIR="${BASE_DIR:-$HOME/.config/i3dots}"
+export CURRENT_ENV="${CURRENT_ENV:-i3dots}"
+export PACKAGE_DIR="${PACKAGE_DIR:-$BASE_DIR/packages/$CURRENT_ENV}"
+export HOOK_DIR="${HOOK_DIR:-$PACKAGE_DIR/hooks}"
+
+SEQUENTIAL_COMPONENTS="${SEQUENTIAL_COMPONENTS:-icons}"
+MANAGED_COMPONENTS="${MANAGED_COMPONENTS:-polybar i3 refresh}"
+
 # 1. Parseo
 H_NAME=""
 while [[ $# -gt 0 ]]; do

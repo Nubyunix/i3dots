@@ -4,13 +4,20 @@
 # 1. Configurar Directorios Base
 export BASE_DIR="${BASE_DIR:-$HOME/.config/i3dots}"
 export ROOT_DIR="$BASE_DIR"
+export CORE_DIR="${CORE_DIR:-$BASE_DIR/core}"
+export BIN_DIR="${BIN_DIR:-$CORE_DIR/bin}"
 CUR_ENV="${CURRENT_ENV:-i3dots}"
+export PACKAGE_DIR="${PACKAGE_DIR:-$BASE_DIR/packages/$CUR_ENV}"
 STATE_DIR_VAL="${STATE_DIR:-$BASE_DIR/core/state}"
 WP_STATE_DIR="$STATE_DIR_VAL/$CUR_ENV/wallpaper"
 [[ -d "$WP_STATE_DIR" ]] || mkdir -p "$WP_STATE_DIR"
 
-# Directorio de origen de wallpapers
+# Directorio de origen de wallpapers y temas de selección
 WALLPAPER_DIR="${WALLPAPER_DIR:-$HOME/wall}"
+export WALL_SEL_THEME="${WALL_SEL_THEME:-$HOME/.config/rofi/themes/WallSelect.rasi}"
+
+# Asegurar que los binarios del core y del paquete estén siempre en el PATH
+export PATH="$BIN_DIR:$PACKAGE_DIR/bin:$HOME/.local/bin:$PATH"
 
 # Migración automática de configuración heredada a state.env unificado
 if [[ ! -f "$WP_STATE_DIR/state.env" ]]; then

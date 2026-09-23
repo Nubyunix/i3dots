@@ -481,6 +481,11 @@ safe_link "$PACKAGE_DIR/bin/wall_menu.sh" "$HOME/.local/bin/wall_menu.sh"
 safe_link "$PACKAGE_DIR/bin/show_cheatsheet.sh" "$HOME/.local/bin/show_cheatsheet.sh"
 safe_link "$CORE_DIR/bin/powermenu.sh" "$HOME/.local/bin/powermenu.sh"
 safe_link "$CORE_DIR/bin/engine_display.sh" "$HOME/.local/bin/engine_display.sh"
+safe_link "$CORE_DIR/bin/wp_select.sh" "$HOME/.local/bin/wp_select.sh"
+safe_link "$CORE_DIR/bin/engine_matugen.sh" "$HOME/.local/bin/engine_matugen.sh"
+safe_link "$CORE_DIR/bin/apply_dots.sh" "$HOME/.local/bin/apply_dots.sh"
+safe_link "$PACKAGE_DIR/bin/wp_seq.sh" "$HOME/.local/bin/wp_seq.sh"
+safe_link "$PACKAGE_DIR/bin/wp_live_seq.sh" "$HOME/.local/bin/wp_live_seq.sh"
 
 export PATH="$HOME/.local/bin:$PATH"
 

@@ -57,6 +57,11 @@ targets=(
     "$HOME/.local/bin/show_cheatsheet.sh"
     "$HOME/.local/bin/powermenu.sh"
     "$HOME/.local/bin/engine_display.sh"
+    "$HOME/.local/bin/wp_select.sh"
+    "$HOME/.local/bin/engine_matugen.sh"
+    "$HOME/.local/bin/apply_dots.sh"
+    "$HOME/.local/bin/wp_seq.sh"
+    "$HOME/.local/bin/wp_live_seq.sh"
     "$HOME/.local/share/file-manager/actions/i3dots-wallpaper.desktop"
 )
 

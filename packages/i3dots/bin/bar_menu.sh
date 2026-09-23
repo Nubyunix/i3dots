@@ -31,6 +31,7 @@ fi
 
 # Cargar configuraciones de visualización
 BAR_SEL_BIN="${BAR_SEL_BIN:-rofi}"
+BAR_SEL_THEME="${BAR_SEL_THEME:-$HOME/.config/rofi/themes/shared/menu_generic.rasi}"
 BAR_SEL_PROMPT_FLAG="${BAR_SEL_PROMPT_FLAG:--p}"
 read -ra BAR_ARGS_ARR <<< "${BAR_SEL_ARGS:--dmenu}"
 if [[ "$BAR_SEL_BIN" == *"rofi"* ]] && [ -n "$BAR_SEL_THEME" ] && [[ "${BAR_SEL_ARGS}" != *"-theme"* ]]; then

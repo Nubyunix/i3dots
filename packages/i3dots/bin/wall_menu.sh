@@ -59,7 +59,7 @@ fi
 if [[ "$MANAGE_MODE" -eq 1 ]]; then
     # Cargar variables de visualización de Rofi para configuración
     SEL_BIN="${WP_SEL_BIN:-rofi}"
-    LAUNCHER_THEME="${WP_MANAGE_THEME:-${ROFI_THEME:-$HOME/.config/rofi/themes/launcher.rasi}}"
+    LAUNCHER_THEME="${WP_MANAGE_THEME:-$HOME/.config/rofi/themes/wall_manage.rasi}"
     SEL_ARGS_ARR=("-dmenu" "-theme" "$LAUNCHER_THEME")
 
     # Función genérica para solicitar selección en Rofi/dmenu
