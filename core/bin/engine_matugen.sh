@@ -30,6 +30,7 @@ export PACKAGE_DIR="${PACKAGE_DIR:-$PACKAGES_DIR/$CURRENT_ENV}"
 
 WP_STATE_DIR="$STATE_DIR/$CURRENT_ENV/wallpaper"
 COLOR_SOURCE="$WP_STATE_DIR/color_source"
+CURRENT_WALLPAPER_LINK="${CURRENT_WALLPAPER_LINK:-$HOME/.config/i3/current}"
 
 if [[ -z "$IMG_PATH" ]]; then
     if [[ -f "$COLOR_SOURCE" ]]; then

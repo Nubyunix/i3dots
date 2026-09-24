@@ -38,6 +38,7 @@ STATE_FILE="$COMP_STATE_DIR/state.env"
 
 # Cargar config.env para obtener presets y rutas de hooks
 export PACKAGE_DIR="${PACKAGE_DIR:-$BASE_DIR/packages/$CURRENT_ENV}"
+export HOOK_DIR="${HOOK_DIR:-$PACKAGE_DIR/hooks}"
 CONFIG_ENV="$PACKAGE_DIR/config.env"
 [ -f "$CONFIG_ENV" ] && source "$CONFIG_ENV"
 

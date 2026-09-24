@@ -9,6 +9,9 @@ export CURRENT_ENV="${CURRENT_ENV:-i3dots}"
 export PACKAGE_DIR="${PACKAGE_DIR:-$BASE_DIR/packages/$CURRENT_ENV}"
 export HOOK_DIR="${HOOK_DIR:-$PACKAGE_DIR/hooks}"
 
+# Cargar configuración del paquete actual
+[ -f "$PACKAGE_DIR/config.env" ] && source "$PACKAGE_DIR/config.env"
+
 SEQUENTIAL_COMPONENTS="${SEQUENTIAL_COMPONENTS:-icons}"
 MANAGED_COMPONENTS="${MANAGED_COMPONENTS:-polybar i3 refresh}"
 

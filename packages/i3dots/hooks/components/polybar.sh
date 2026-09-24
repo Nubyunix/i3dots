@@ -11,6 +11,11 @@ BAR_STATE_DIR="$STATE_DIR/$CURRENT_ENV/bar"
 mkdir -p "$BAR_STATE_DIR"
 STATE_FILE="$BAR_STATE_DIR/state.env"
 
+# Cargar configuración del paquete si no se han exportado variables como OS_ICON
+if [ -z "$OS_ICON" ] && [ -f "$PACKAGE_DIR/config.env" ]; then
+    source "$PACKAGE_DIR/config.env"
+fi
+
 # 0. Protocolo de Consulta para Frontends
 if [ "$1" == "--query" ]; then
     CUR_TYPE="${2:-$(source "$STATE_FILE" 2>/dev/null && echo "$type" || echo "polybar_underline")}"
