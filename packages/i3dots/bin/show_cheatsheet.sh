@@ -7,11 +7,12 @@ if pkill -f "rofi.*cheatsheet.rasi" 2>/dev/null; then
 fi
 
 # 2. Localizar archivo markdown fuente
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="${BASE_DIR:-$HOME/.config/i3dots}"
 MD_FILE="$BASE_DIR/packages/i3dots/assets/cheatsheet.md"
 
 if [ ! -f "$MD_FILE" ]; then
-    MD_FILE="/home/dereck/dotfile/i3dots/packages/i3dots/assets/cheatsheet.md"
+    MD_FILE="$SCRIPT_DIR/../assets/cheatsheet.md"
 fi
 
 if [ ! -f "$MD_FILE" ]; then

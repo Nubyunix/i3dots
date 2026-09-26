@@ -60,6 +60,7 @@ targets=(
     "$HOME/.local/bin/wp_select.sh"
     "$HOME/.local/bin/engine_matugen.sh"
     "$HOME/.local/bin/apply_dots.sh"
+    "$HOME/.local/bin/engine_state.sh"
     "$HOME/.local/bin/wp_seq.sh"
     "$HOME/.local/bin/wp_live_seq.sh"
     "$HOME/.local/share/file-manager/actions/i3dots-wallpaper.desktop"
