@@ -176,9 +176,9 @@ elif [[ $# -eq 2 ]]; then
         (polybar-msg cmd hide ; pkill -u $UID -x polybar) &>/dev/null &
         
         if [[ "$ACTIVE_MODE" == "light" ]]; then
-            engine_matugen.sh -m light
+            engine_matugen.sh -m light -i "$color_src"
         else
-            engine_matugen.sh -m dark
+            engine_matugen.sh -m dark -i "$color_src"
         fi
         
         [[ -n "$temp_to_clean" && -f "$temp_to_clean" ]] && rm -f "$temp_to_clean"

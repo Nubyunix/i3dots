@@ -76,6 +76,10 @@ if [[ -f "$RULES_FILE" ]]; then
     [[ "$DETECTED_MODE" == "settings" ]] && DETECTED_MODE="${active_mode_real:-dark}"
 
     WP_BASE=$(basename "$IMG_PATH")
+    if [[ -f "$HOME/.config/i3/wall" ]]; then
+        cur_wall=$(< "$HOME/.config/i3/wall")
+        [[ -n "$cur_wall" && -f "$cur_wall" ]] && WP_BASE=$(basename "$cur_wall")
+    fi
     WP_SAFE_NAME="${WP_BASE//[^a-zA-Z0-9]/_}"
 
     RULE_LINE=$(grep "^${WP_SAFE_NAME}\.${DETECTED_MODE}=" "$RULES_FILE" | cut -d= -f2-)
