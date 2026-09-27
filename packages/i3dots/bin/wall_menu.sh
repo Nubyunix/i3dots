@@ -126,6 +126,12 @@ if [[ "$MANAGE_MODE" -eq 1 ]]; then
                     "Cargar imagen original") val="original" ;;
                     "Usar icono genérico") val="icon" ;;
                 esac
+            elif [[ "$state_key" == "rofi_scale" ]]; then
+                case "$sel" in
+                    "Estándar (1080p+)") val="standard" ;;
+                    "Compacto (Laptop)") val="compact" ;;
+                    "Mini (720p)") val="mini" ;;
+                esac
             fi
 
             local final_val="${prefix}${val}"
@@ -155,6 +161,7 @@ if [[ "$MANAGE_MODE" -eq 1 ]]; then
 
     # Carga e inicialización unificada de variables locales del estado
     load_wp_config
+    cur_rofi_scale=$(get_state "rofi_scale" "standard")
     cur_show_names_mode=$(get_state "show_names_mode" "selected-invisible")
     cur_card_style=$(get_state "card_style" "true")
     cur_card_round_border=$(get_state "card_round_border" "false")
@@ -212,7 +219,15 @@ if [[ "$MANAGE_MODE" -eq 1 ]]; then
                 "disabled") mode_lbl="Desactivados" ;;
             esac
             
+            local scale_lbl="Estándar (1080p+)"
+            case "$cur_rofi_scale" in
+                "compact") scale_lbl="Compacto (Laptop)" ;;
+                "mini") scale_lbl="Mini (720p)" ;;
+                *) scale_lbl="Estándar (1080p+)" ;;
+            esac
+
             local vis_opts=""
+            vis_opts+="Tamaño de interfaz: $scale_lbl"$'\n'
             vis_opts+="Nombres de wallpapers: $mode_lbl"$'\n'
             vis_opts+="Estilo tarjeta (Card): $(lbl_bool "$cur_card_style")"$'\n'
             if [[ "$cur_card_style" == "true" ]]; then
@@ -225,7 +240,11 @@ if [[ "$MANAGE_MODE" -eq 1 ]]; then
             local vis_choice=$(ask_selection "Visualización" "$vis_opts")
             [[ -z "$vis_choice" || "$vis_choice" == "Atrás" ]] && break
 
-            if [[ "$vis_choice" == "Nombres de wallpapers"* ]]; then
+            if [[ "$vis_choice" == "Tamaño de interfaz"* ]]; then
+                local scales=$'Estándar (1080p+)\nCompacto (Laptop)\nMini (720p)\nAtrás'
+                ask_and_apply_loop "Tamaño de interfaz" "$scales" "rofi_scale" "cur_rofi_scale" ""
+
+            elif [[ "$vis_choice" == "Nombres de wallpapers"* ]]; then
                 local modes=$'Todos\nSolo en seleccionada\nSolo en seleccionada (Invisible)\nDesactivados\nAtrás'
                 ask_and_apply_loop "Nombres" "$modes" "show_names_mode" "cur_show_names_mode" ""
 
@@ -727,7 +746,14 @@ else
     SEL_THEME="${WALL_SEL_THEME:-$HOME/.config/rofi/themes/WallSelect.rasi}"
     SEL_ARGS=(${WP_SEL_ARGS:--dmenu -p "Wallpaper" -theme "${SEL_THEME}"})
     LINE_TMPL="${WP_SEL_LINE_TMPL:-%f\x00icon\x1f%p}"
-    WP_SEL_STYLE="${WP_SEL_STYLE:--theme-str 'element-icon{size:450px;} element-text{horizontal-align:0.5;}'}"
+    
+    scale_val=$(get_state "rofi_scale" "standard")
+    case "$scale_val" in
+        "compact") geom_css="window{width:1230px;} element-icon{size:360px;}" ;;
+        "mini")    geom_css="window{width:1050px;} element-icon{size:300px;}" ;;
+        *)         geom_css="window{width:1500px;} element-icon{size:450px;}" ;;
+    esac
+    WP_SEL_STYLE="${WP_SEL_STYLE:--theme-str \"$geom_css element-text{horizontal-align:0.5;}\"}"
 
     [[ -d "$THUMB_DIR" ]] || mkdir -p "$THUMB_DIR"
 

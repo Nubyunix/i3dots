@@ -28,7 +28,18 @@ if [[ $# -eq 0 ]]; then
     ind_underline=$(get_state "ind_underline" "false")
     ind_halo=$(get_state "ind_halo" "false")
 
-    icon_size_css="element-icon{size:450px;}"
+    rofi_scale=$(get_state "rofi_scale" "standard")
+    case "$rofi_scale" in
+        "compact")
+            geom_css="window{width:1230px;} element-icon{size:360px;}"
+            ;;
+        "mini")
+            geom_css="window{width:1050px;} element-icon{size:300px;}"
+            ;;
+        *)
+            geom_css="window{width:1500px;} element-icon{size:450px;}"
+            ;;
+    esac
     indicator_css=""
 
     if [[ "$ind_text" == "true" ]]; then
@@ -104,7 +115,7 @@ if [[ $# -eq 0 ]]; then
     exec rofi -show "$show_mode" \
         -modi "$L_DARK:$0 --mode-dark,$L_LIGHT:$0 --mode-light" \
         -theme "$WALL_SEL_THEME" \
-        -theme-str "$icon_size_css element-text{horizontal-align:0.5;} $card_css $join_css $names_css $indicator_css $extra_invisible_css"
+        -theme-str "$geom_css element-text{horizontal-align:0.5;} $card_css $join_css $names_css $indicator_css $extra_invisible_css"
 
 elif [[ $# -eq 1 ]]; then
     # Fase 2: Rofi solicita lista (stdout)
