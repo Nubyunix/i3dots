@@ -74,12 +74,18 @@ save_state() {
 load_wp_config() {
     [[ -f "$WP_STATE_DIR/state.env" ]] && source "$WP_STATE_DIR/state.env"
     THUMB_MODE=$(get_state "thumbnail_mode" "enabled")
-    THUMB_SIZE=$(get_state "thumbnail_size" "450")
-    NO_THUMB_MODE=$(get_state "no_thumb_mode" "original")
+    THUMB_SIZE=$(get_state "thumbnail_size" "")
+    [[ -z "$THUMB_SIZE" ]] && THUMB_SIZE=$(get_state "thumb_size" "450")
+
+    NO_THUMB_MODE=$(get_state "no_thumb_mode" "")
+    [[ -z "$NO_THUMB_MODE" ]] && NO_THUMB_MODE=$(get_state "no_thumb" "original")
+
     BG_GENERATION=$(get_state "bg_generation" "true")
     MATUGEN_USE_THUMB=$(get_state "matugen_use_thumb" "true")
     
-    THUMB_CROP_MODE=$(get_state "thumbnail_crop_mode" "fit")
+    THUMB_CROP_MODE=$(get_state "thumbnail_crop_mode" "")
+    [[ -z "$THUMB_CROP_MODE" ]] && THUMB_CROP_MODE=$(get_state "thumb_crop_mode" "fit")
+
     MATUGEN_CLEAN_TEMP=$(get_state "matugen_clean_temp" "true")
     MATUGEN_USE_FIT=$(get_state "matugen_use_fit" "true")
     

@@ -161,9 +161,14 @@ if [[ "$CLEAN_CACHE" -eq 1 ]]; then
             echo "Limpieza completada. Borradas $deleted_count miniaturas huérfanas."
             ;;
         300|450|600|[0-9]*)
-            size_dir="$root_thumbs/$CLEAN_ARG"
-            if [[ -d "$size_dir" ]]; then
-                rm -rf "$size_dir"
+            found=0
+            for d in "$root_thumbs"/${CLEAN_ARG} "$root_thumbs"/${CLEAN_ARG}_*; do
+                if [[ -d "$d" ]]; then
+                    rm -rf "$d"
+                    found=1
+                fi
+            done
+            if [[ "$found" -eq 1 ]]; then
                 echo "Caché de calidad $CLEAN_ARG px eliminada."
             else
                 echo "No existe caché para la calidad $CLEAN_ARG px."
@@ -174,9 +179,9 @@ if [[ "$CLEAN_CACHE" -eq 1 ]]; then
             while IFS= read -r -d '' dir; do
                 [[ -z "$dir" ]] && continue
                 dir_name="${dir##*/}"
-                if [[ "$dir_name" != "$THUMB_SIZE" ]]; then
+                if [[ "$dir_name" != "${THUMB_SIZE}" && "$dir_name" != "${THUMB_SIZE}_"* ]]; then
                     rm -rf "$dir"
-                    echo "Eliminada calidad residual: ${dir_name}px"
+                    echo "Eliminada calidad residual: $dir_name"
                 fi
             done < <(find "$root_thumbs" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
             ;;

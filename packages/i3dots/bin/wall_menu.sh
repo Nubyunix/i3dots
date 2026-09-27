@@ -113,15 +113,15 @@ if [[ "$MANAGE_MODE" -eq 1 ]]; then
                     "Solo en seleccionada (Invisible)") val="selected-invisible" ;;
                     "Desactivados") val="disabled" ;;
                 esac
-            elif [[ "$state_key" == "thumb_size" ]]; then
+            elif [[ "$state_key" == "thumbnail_size" || "$state_key" == "thumb_size" ]]; then
                 val="${sel#*\(}"
                 val="${val%px\)}"
-            elif [[ "$state_key" == "thumb_crop_mode" ]]; then
+            elif [[ "$state_key" == "thumbnail_crop_mode" || "$state_key" == "thumb_crop_mode" ]]; then
                 case "$sel" in
                     "Cuadrado (Crop)") val="crop" ;;
                     "Completo (Fit)") val="fit" ;;
                 esac
-            elif [[ "$state_key" == "no_thumb" ]]; then
+            elif [[ "$state_key" == "no_thumb_mode" || "$state_key" == "no_thumb" ]]; then
                 case "$sel" in
                     "Cargar imagen original") val="original" ;;
                     "Usar icono genérico") val="icon" ;;
@@ -279,7 +279,7 @@ if [[ "$MANAGE_MODE" -eq 1 ]]; then
                 [[ "$cur_thumb_mode" == "enabled" ]] && next_mode="disabled"
                 save_state "thumbnail_mode" "$next_mode"
                 cur_thumb_mode="$next_mode"
-                if [[ "$cur_thumb_mode" == "enabled" ]] && [[ "$HAS_VIPS" -eq 0 ]]; then
+                if [[ "$cur_thumb_mode" == "enabled" ]] && [[ "$HAS_IMAGE_BACKEND" -eq 0 ]]; then
                     cur_thumb_mode="disabled"
                 fi
 
@@ -328,7 +328,7 @@ if [[ "$MANAGE_MODE" -eq 1 ]]; then
 
             elif [[ "$thumb_choice" == "$PROM_NO_THUMB"* ]]; then
                 local fallbacks=$'Cargar imagen original\nUsar icono genérico\nAtrás'
-                ask_and_apply_loop "$PROM_NO_THUMB" "$fallbacks" "no_thumb" "cur_no_thumb" ""
+                ask_and_apply_loop "$PROM_NO_THUMB" "$fallbacks" "no_thumb_mode" "cur_no_thumb" ""
             fi
         done
     }
@@ -727,7 +727,7 @@ else
     SEL_THEME="${WALL_SEL_THEME:-$HOME/.config/rofi/themes/WallSelect.rasi}"
     SEL_ARGS=(${WP_SEL_ARGS:--dmenu -p "Wallpaper" -theme "${SEL_THEME}"})
     LINE_TMPL="${WP_SEL_LINE_TMPL:-%f\x00icon\x1f%p}"
-    WP_SEL_STYLE="${WP_SEL_STYLE:--theme-str 'element-icon{size:450px;} element-text{horizontal-align:0.5;}'}"
+    WP_SEL_STYLE="${WP_SEL_STYLE:--theme-str \"element-icon{size:${THUMB_SIZE:-450}px;} element-text{horizontal-align:0.5;}\"}"
 
     [[ -d "$THUMB_DIR" ]] || mkdir -p "$THUMB_DIR"
 
@@ -764,7 +764,12 @@ if [[ -n "$SELECTION" ]]; then
     # Actualizar origen de color para Matugen de forma local (evita fork de wp_color.sh)
     color_src="$FINAL_PATH"
     if [[ "$THUMB_MODE" == "enabled" && "$MATUGEN_USE_THUMB" == "true" ]]; then
-        get_thumb_path "$FINAL_PATH"
+        local target_crop="${THUMB_CROP_MODE:-fit}"
+        [[ "$MATUGEN_USE_FIT" == "true" ]] && target_crop="fit"
+        get_thumb_path "$FINAL_PATH" "$target_crop"
+        if [[ ! -f "$RET_THUMB" ]]; then
+            generate_single_thumb "$FINAL_PATH" "$RET_THUMB" "$target_crop"
+        fi
         [[ -f "$RET_THUMB" ]] && color_src="$RET_THUMB"
     fi
     ln -sf "$color_src" "$WP_STATE_DIR/color_source"
