@@ -41,21 +41,37 @@ engine_init() {
 _sync_root_thumbnail() {
     local target_path="$1"
     local wp_state_dir="${BASE_DIR:-$HOME/.config/i3dots}/core/state/${CURRENT_ENV:-i3dots}/wallpaper"
-    local safe_name="${target_path//\//_}"
     local thumb=""
 
     mkdir -p "$wp_state_dir"
 
-    # 1. Buscar thumbnail existente en el cache
-    if [[ -d "$wp_state_dir/thumbs" ]]; then
+    # 1. Resolver miniatura vía get_thumb_path (compartido) o fallback local
+    if ! declare -F get_thumb_path &>/dev/null; then
+        local shared_script="${BASE_DIR:-$HOME/.config/i3dots}/packages/${CURRENT_ENV:-i3dots}/bin/wp_shared.sh"
+        [[ -f "$shared_script" ]] && source "$shared_script"
+    fi
+
+    if declare -F get_thumb_path &>/dev/null; then
+        get_thumb_path "$target_path" "fit"
+        [[ -f "$RET_THUMB" ]] && thumb="$RET_THUMB"
+    fi
+
+    # Fallback legacy si no se encontró por get_thumb_path
+    if [[ -z "$thumb" && -d "$wp_state_dir/thumbs" ]]; then
+        local safe_name="${target_path//\//_}"
         thumb=$(find "$wp_state_dir/thumbs" -name "${safe_name}*.jpg" -o -name "${safe_name}*.png" 2>/dev/null | head -1)
     fi
 
-    # 2. Si no existe en thumbs, extraer un fotograma rápido del video
+    # 2. Si no existe en thumbs, extraer un fotograma rápido del video guardándolo bajo su ID de contenido
     if [[ -z "$thumb" || ! -f "$thumb" ]]; then
-        local thumb_dir="$wp_state_dir/thumbs/450_fit"
-        mkdir -p "$thumb_dir"
-        local auto_thumb="$thumb_dir/${safe_name}.jpg"
+        local auto_thumb
+        if [[ -n "$RET_THUMB" ]]; then
+            auto_thumb="$RET_THUMB"
+        else
+            local safe_name="${target_path//\//_}"
+            auto_thumb="$wp_state_dir/thumbs/450_fit/${safe_name}.jpg"
+        fi
+        mkdir -p "$(dirname "$auto_thumb")"
         if command -v ffmpeg &>/dev/null; then
             ffmpeg -y -ss 00:00:01 -i "$target_path" -vframes 1 -q:v 2 "$auto_thumb" &>/dev/null
             [[ -f "$auto_thumb" ]] && thumb="$auto_thumb"

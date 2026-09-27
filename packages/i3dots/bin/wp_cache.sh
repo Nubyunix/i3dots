@@ -53,7 +53,7 @@ generate_single_thumb() {
     return 1
 }
 
-# 3. Modo: Pre-caché en background (--bg-gen)
+## 3. Modo: Pre-caché en background (--bg-gen)
 if [[ "$BG_GEN" -eq 1 ]]; then
     if [[ ! -t 0 ]]; then
         wallpapers_found=$(cat)
@@ -75,6 +75,10 @@ if [[ "$BG_GEN" -eq 1 ]]; then
         get_thumb_path "$real_file"
         thumb="$RET_THUMB"
         if [[ ! -f "$thumb" || "$real_file" -nt "$thumb" ]]; then
+            if [[ "$real_file" -nt "$thumb" ]]; then
+                get_thumb_path "$real_file" "$THUMB_CROP_MODE" 1
+                thumb="$RET_THUMB"
+            fi
             generate_single_thumb "$real_file" "$thumb"
         fi
     done <<< "$wallpapers_found"
@@ -83,7 +87,7 @@ fi
 
 # 4. Modo: Cachear Ahora (--cache-now)
 if [[ "$CACHE_NOW" -eq 1 ]]; then
-    wallpapers_found=$(list_wallpapers)
+    wallpapers_found=$(list_all_wallpapers | sort -u)
     [[ -z "$wallpapers_found" ]] && { echo "No se encontraron wallpapers." >&2; exit 0; }
     
     [[ -d "$THUMB_DIR" ]] || mkdir -p "$THUMB_DIR"
@@ -116,12 +120,11 @@ if [[ "$CACHE_NOW" -eq 1 ]]; then
     for file in "${pending[@]}"; do
         count=$((count+1))
         echo -e "\e[1A\e[K[$count/$total] Procesando: ${file##*/}"
-        get_thumb_path "$file"
+        get_thumb_path "$file" "$THUMB_CROP_MODE" 1
         thumb="$RET_THUMB"
         generate_single_thumb "$file" "$thumb"
     done
     
-
     echo "Caché de miniaturas completado."
     exit 0
 fi
@@ -135,25 +138,40 @@ if [[ "$CLEAN_CACHE" -eq 1 ]]; then
     case "$CLEAN_ARG" in
         orphans)
             echo "Buscando miniaturas huérfanas en todas las calidades..."
-            wallpapers_found=$(list_wallpapers)
+            wallpapers_found=$(list_all_wallpapers | sort -u)
+            if [[ -z "$wallpapers_found" ]]; then
+                echo "Advertencia: No se detectaron wallpapers activos. Abortando limpieza para evitar pérdida de datos." >&2
+                exit 1
+            fi
             
-            declare -A active_walls
+            declare -A active_thumbs
+            declare -a new_index_lines=()
+            
             while IFS= read -r file; do
-                [[ -n "$file" ]] && active_walls["$file"]=1
+                [[ -z "$file" || ! -f "$file" ]] && continue
+                if [[ -L "$file" ]]; then
+                    real_file=$(readlink -f "$file")
+                else
+                    real_file="$file"
+                fi
+                
+                # Resuelve ruta, ejecuta migración heredada y asegura CID
+                get_thumb_path "$real_file"
+                cid="${WP_THUMB_INDEX["$real_file"]}"
+                if [[ -n "$cid" ]]; then
+                    new_index_lines+=("$cid $real_file")
+                    active_thumbs["${cid}.jpg"]=1
+                fi
             done <<< "$wallpapers_found"
             
-            declare -A active_safes
-            for w in "${!active_walls[@]}"; do
-                safe="${w//\//_}"
-                active_safes["$safe"]=1
-            done
+            # Reescribir thumb_index limpio sin entradas obsoletas
+            printf "%s\n" "${new_index_lines[@]}" > "$WP_INDEX_FILE"
             
             deleted_count=0
             while IFS= read -r -d '' thumb_file; do
                 [[ -z "$thumb_file" ]] && continue
                 t_name="${thumb_file##*/}"
-                t_name="${t_name%.jpg}"
-                if [[ -z "${active_safes[$t_name]}" ]]; then
+                if [[ -z "${active_thumbs["$t_name"]}" ]]; then
                     rm -f "$thumb_file"
                     deleted_count=$((deleted_count+1))
                 fi
@@ -184,6 +202,7 @@ if [[ "$CLEAN_CACHE" -eq 1 ]]; then
         full)
             echo "Vaciando toda la caché de miniaturas..."
             rm -rf "$root_thumbs"
+            rm -f "$WP_INDEX_FILE"
             echo "Caché completa eliminada."
             ;;
         *)

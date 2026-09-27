@@ -93,13 +93,66 @@ load_wp_config
 HAS_VIPS=0
 command -v vipsthumbnail &>/dev/null && HAS_VIPS=1
 
-# 4. Helper para obtener ruta física de miniatura
+# 4. Indexación por huella de contenido (Content-Addressed Thumbnails)
+WP_INDEX_FILE="$WP_STATE_DIR/thumb_index"
+declare -gA WP_THUMB_INDEX
+
+load_thumb_index() {
+    [[ -f "$WP_INDEX_FILE" ]] || return 0
+    local cid path
+    while read -r cid path; do
+        [[ -n "$cid" && -n "$path" ]] && WP_THUMB_INDEX["$path"]="$cid"
+    done < "$WP_INDEX_FILE"
+}
+load_thumb_index
+
+get_file_id() {
+    local f="$1"
+    [[ -f "$f" ]] || return 1
+    (head -c 65536 "$f"; tail -c 4096 "$f"; stat -c %s "$f") 2>/dev/null | sha256sum | cut -c 1-16
+}
+
+# Helper para obtener ruta física de miniatura
 # Retorna en variable global RET_THUMB para evitar subshells $(...)
 get_thumb_path() {
     local real_file="$1"
     local crop_mode="${2:-$THUMB_CROP_MODE}"
-    local safe_name="${real_file//\//_}"
-    RET_THUMB="$WP_STATE_DIR/thumbs/${THUMB_SIZE}_${crop_mode}/${safe_name}.jpg"
+    local force_rehash="${3:-0}"
+    local cid="${WP_THUMB_INDEX["$real_file"]}"
+
+    if [[ -z "$cid" || "$force_rehash" -eq 1 ]] && [[ -f "$real_file" ]]; then
+        cid=$(get_file_id "$real_file")
+        if [[ -n "$cid" ]]; then
+            WP_THUMB_INDEX["$real_file"]="$cid"
+            mkdir -p "$(dirname "$WP_INDEX_FILE")"
+            printf "%s %s\n" "$cid" "$real_file" >> "$WP_INDEX_FILE"
+        fi
+    fi
+
+    if [[ -n "$cid" ]]; then
+        local target_dir="$WP_STATE_DIR/thumbs/${THUMB_SIZE}_${crop_mode}"
+        local thumb_file="$target_dir/${cid}.jpg"
+
+        # Migración instantánea de miniatura heredada si el nuevo ID aún no existe físicamente
+        if [[ ! -f "$thumb_file" && -d "$target_dir" ]]; then
+            local legacy_name="${real_file//\//_}.jpg"
+            local legacy_thumb="$target_dir/$legacy_name"
+            if [[ -f "$legacy_thumb" ]]; then
+                mv "$legacy_thumb" "$thumb_file" 2>/dev/null
+            else
+                local clean_name="${legacy_name/_noskip/}"
+                clean_name=$(sed -E 's/_fps[0-9]+//' <<< "$clean_name")
+                local legacy_clean="$target_dir/$clean_name"
+                if [[ -f "$legacy_clean" ]]; then
+                    mv "$legacy_clean" "$thumb_file" 2>/dev/null
+                fi
+            fi
+        fi
+        RET_THUMB="$thumb_file"
+    else
+        local safe_name="${real_file//\//_}"
+        RET_THUMB="$WP_STATE_DIR/thumbs/${THUMB_SIZE}_${crop_mode}/${safe_name}.jpg"
+    fi
 }
 
 list_wallpapers() {
@@ -108,6 +161,15 @@ list_wallpapers() {
         find -L "$WALLPAPER_DIR/live" -type f \( -iname "*.gif" -o -iname "*.mp4" -o -iname "*.webm" -o -iname "*.mkv" -o -iname "*.mov" \) | sort
     else
         find -L "$WALLPAPER_DIR" -maxdepth 1 -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" \) | sort
+    fi
+}
+
+list_all_wallpapers() {
+    if [[ -d "$WALLPAPER_DIR" ]]; then
+        find -L "$WALLPAPER_DIR" -maxdepth 1 -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" \)
+    fi
+    if [[ -d "$WALLPAPER_DIR/live" ]]; then
+        find -L "$WALLPAPER_DIR/live" -type f \( -iname "*.gif" -o -iname "*.mp4" -o -iname "*.webm" -o -iname "*.mkv" -o -iname "*.mov" \)
     fi
 }
 
