@@ -32,26 +32,7 @@ if ! flock -n 9; then
     exit 0
 fi
 
-# Helper para generar miniatura segun tipo de archivo
-generate_single_thumb() {
-    local input_file="$1"
-    local output_thumb="$2"
-    
-    if [[ "$input_file" =~ \.(mp4|webm|mkv|mov)$ ]]; then
-        if command -v ffmpegthumbnailer &>/dev/null; then
-            nice -n 19 ffmpegthumbnailer -i "$input_file" -o "$output_thumb" -s "$THUMB_SIZE" &>/dev/null
-            return $?
-        fi
-    else
-        if [[ "$HAS_VIPS" -eq 1 ]]; then
-            local vips_args=(-s "$THUMB_SIZE")
-            [[ "$THUMB_CROP_MODE" == "crop" ]] && vips_args=(-s "${THUMB_SIZE}x${THUMB_SIZE}" -m centre)
-            nice -n 19 vipsthumbnail "${vips_args[@]}" -o "$output_thumb" "$input_file" 2>/dev/null
-            return $?
-        fi
-    fi
-    return 1
-}
+# Nota: generate_single_thumb es provisto por wp_shared.sh con soporte para libvips, ImageMagick y ffmpeg.
 
 ## 3. Modo: Pre-caché en background (--bg-gen)
 if [[ "$BG_GEN" -eq 1 ]]; then

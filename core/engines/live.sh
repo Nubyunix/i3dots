@@ -78,8 +78,12 @@ _sync_root_thumbnail() {
         fi
     fi
 
-    # 3. Mantener siempre color_source actualizado para Matugen (paleta de colores)
-    [[ -n "$thumb" && -f "$thumb" ]] && ln -sf "$thumb" "$wp_state_dir/color_source"
+    # 3. Mantener siempre color_source y current_static actualizados
+    if [[ -n "$thumb" && -f "$thumb" ]]; then
+        ln -sf "$thumb" "$wp_state_dir/color_source"
+        mkdir -p "$HOME/.config/i3"
+        ln -sf "$thumb" "$HOME/.config/i3/current_static"
+    fi
 
     # 4. En X11 sin compositor activo (picom), mantener la ventana raíz sincronizada
     # para aplicaciones que usen pseudo-transparencia. Si picom está corriendo, no se ejecuta feh.

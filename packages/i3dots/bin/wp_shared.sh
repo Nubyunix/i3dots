@@ -89,9 +89,19 @@ load_wp_config() {
 # Inicializar configuración
 load_wp_config
 
-# 3. Detectar Dependencia de libvips
+# 3. Detectar Dependencias de Generación de Miniaturas
 HAS_VIPS=0
+HAS_MAGICK=0
+HAS_FFMPEGTHUMB=0
+HAS_FFMPEG=0
+
 command -v vipsthumbnail &>/dev/null && HAS_VIPS=1
+command -v magick &>/dev/null && HAS_MAGICK=1 || { command -v convert &>/dev/null && HAS_MAGICK=1; }
+command -v ffmpegthumbnailer &>/dev/null && HAS_FFMPEGTHUMB=1
+command -v ffmpeg &>/dev/null && HAS_FFMPEG=1
+
+HAS_IMAGE_BACKEND=0
+[[ "$HAS_VIPS" -eq 1 || "$HAS_MAGICK" -eq 1 || "$HAS_FFMPEG" -eq 1 ]] && HAS_IMAGE_BACKEND=1
 
 # 4. Indexación por huella de contenido (Content-Addressed Thumbnails)
 WP_INDEX_FILE="$WP_STATE_DIR/thumb_index"
@@ -153,6 +163,63 @@ get_thumb_path() {
         local safe_name="${real_file//\//_}"
         RET_THUMB="$WP_STATE_DIR/thumbs/${THUMB_SIZE}_${crop_mode}/${safe_name}.jpg"
     fi
+}
+
+# Helper universal y tolerante a fallos para generar miniatura según tipo de archivo
+# Cascada de backends: libvips -> ImageMagick -> ffmpeg
+generate_single_thumb() {
+    local input_file="$1"
+    local output_thumb="$2"
+    local crop_mode="${3:-$THUMB_CROP_MODE}"
+
+    [[ -z "$input_file" || -z "$output_thumb" ]] && return 1
+
+    mkdir -p "$(dirname "$output_thumb")"
+
+    if [[ "$input_file" =~ \.(mp4|webm|mkv|mov)$ ]]; then
+        if [[ "$HAS_FFMPEGTHUMB" -eq 1 ]]; then
+            nice -n 19 ffmpegthumbnailer -i "$input_file" -o "$output_thumb" -s "$THUMB_SIZE" &>/dev/null
+            [[ -f "$output_thumb" ]] && return 0
+        fi
+        if [[ "$HAS_FFMPEG" -eq 1 ]]; then
+            nice -n 19 ffmpeg -y -ss 00:00:01 -i "$input_file" -vframes 1 -vf "scale=${THUMB_SIZE}:-1" -q:v 2 "$output_thumb" &>/dev/null
+            [[ -f "$output_thumb" ]] && return 0
+        fi
+    else
+        # 1. libvips (máxima velocidad y eficiencia)
+        if [[ "$HAS_VIPS" -eq 1 ]]; then
+            local vips_args=(-s "$THUMB_SIZE")
+            [[ "$crop_mode" == "crop" ]] && vips_args=(-s "${THUMB_SIZE}x${THUMB_SIZE}" -m centre)
+            if nice -n 19 vipsthumbnail "${vips_args[@]}" -o "$output_thumb" "$input_file" &>/dev/null; then
+                [[ -f "$output_thumb" ]] && return 0
+            fi
+        fi
+
+        # 2. ImageMagick (magick / convert)
+        if command -v magick &>/dev/null; then
+            local geom="${THUMB_SIZE}x${THUMB_SIZE}"
+            [[ "$crop_mode" == "crop" ]] && geom="${THUMB_SIZE}x${THUMB_SIZE}^ -gravity center -extent ${THUMB_SIZE}x${THUMB_SIZE}"
+            if nice -n 19 magick "$input_file" -thumbnail $geom "$output_thumb" &>/dev/null; then
+                [[ -f "$output_thumb" ]] && return 0
+            fi
+        elif command -v convert &>/dev/null; then
+            local geom="${THUMB_SIZE}x${THUMB_SIZE}"
+            [[ "$crop_mode" == "crop" ]] && geom="${THUMB_SIZE}x${THUMB_SIZE}^ -gravity center -extent ${THUMB_SIZE}x${THUMB_SIZE}"
+            if nice -n 19 convert "$input_file" -thumbnail $geom "$output_thumb" &>/dev/null; then
+                [[ -f "$output_thumb" ]] && return 0
+            fi
+        fi
+
+        # 3. ffmpeg (fallback universal de imagen)
+        if [[ "$HAS_FFMPEG" -eq 1 ]]; then
+            local scale_arg="scale=${THUMB_SIZE}:-1"
+            [[ "$crop_mode" == "crop" ]] && scale_arg="scale=${THUMB_SIZE}:${THUMB_SIZE}:force_original_aspect_ratio=increase,crop=${THUMB_SIZE}:${THUMB_SIZE}"
+            if nice -n 19 ffmpeg -y -i "$input_file" -vf "$scale_arg" -q:v 2 "$output_thumb" &>/dev/null; then
+                [[ -f "$output_thumb" ]] && return 0
+            fi
+        fi
+    fi
+    return 1
 }
 
 list_wallpapers() {

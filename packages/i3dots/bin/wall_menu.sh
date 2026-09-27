@@ -29,10 +29,10 @@ done
 BASE_DIR="${BASE_DIR:-$HOME/.config/i3dots}"
 source "$BASE_DIR/packages/i3dots/bin/wp_shared.sh"
 
-# Si habilitado, pero no hay vips, desactivar
-if [[ "$THUMB_MODE" == "enabled" && "$HAS_VIPS" -eq 0 ]]; then
+# Si habilitado, pero no hay ningún backend disponible, desactivar
+if [[ "$THUMB_MODE" == "enabled" && "$HAS_IMAGE_BACKEND" -eq 0 ]]; then
     THUMB_MODE="disabled"
-        echo "Advertencia: Comando 'vipsthumbnail' no encontrado. Desactivando caché de miniaturas." >&2
+    echo "Advertencia: No se encontró vipsthumbnail, imagemagick ni ffmpeg. Desactivando caché de miniaturas." >&2
 fi
 
 # Cargar traducciones e iconos del entorno con fallbacks
@@ -768,6 +768,10 @@ if [[ -n "$SELECTION" ]]; then
         [[ -f "$RET_THUMB" ]] && color_src="$RET_THUMB"
     fi
     ln -sf "$color_src" "$WP_STATE_DIR/color_source"
+    if [[ ! "$color_src" =~ \.(mp4|webm|mkv|mov)$ ]]; then
+        mkdir -p "$HOME/.config/i3"
+        ln -sf "$color_src" "$HOME/.config/i3/current_static"
+    fi
     
     # Asegurar que BIN_DIR esté definida si se ejecuta de forma externa (Rofi/Gestores)
     [[ -z "$BIN_DIR" ]] && BIN_DIR="${BASE_DIR:-$HOME/.config/i3dots}/core/bin"
