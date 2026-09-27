@@ -28,7 +28,7 @@ if [[ $# -eq 0 ]]; then
     ind_underline=$(get_state "ind_underline" "false")
     ind_halo=$(get_state "ind_halo" "false")
 
-    icon_size_css="element-icon{size:${THUMB_SIZE:-450}px;}"
+    icon_size_css="element-icon{size:450px;}"
     indicator_css=""
 
     if [[ "$ind_text" == "true" ]]; then
