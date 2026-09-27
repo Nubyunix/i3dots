@@ -24,24 +24,30 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 2. Aplicar Componentes Secuenciales (pesados, sin competencia)
-for component in $SEQUENTIAL_COMPONENTS; do
-    component_hook="$HOOK_DIR/components/${component}.sh"
-    if [ -f "$component_hook" ]; then
-        var_name="COMPONENT_${component^^}"
-        source "$component_hook" "${!var_name}"
-    fi
-done
-
-# 3. Aplicar Componentes Paralelos (ligeros, tras los secuenciales)
+# 2. Aplicar Componentes Paralelos Visuales (inmediatos: polybar, i3, refresh)
+declare -a ui_pids=()
 for component in $MANAGED_COMPONENTS; do
     component_hook="$HOOK_DIR/components/${component}.sh"
     if [ -f "$component_hook" ]; then
         var_name="COMPONENT_${component^^}"
         source "$component_hook" "${!var_name}" &
+        ui_pids+=($!)
     fi
 done
-wait # Esperar a que todos terminen antes del hook final
+
+# 3. Aplicar Componentes Asíncronos en background (pesados: icons / recolor_folders)
+for component in $SEQUENTIAL_COMPONENTS; do
+    component_hook="$HOOK_DIR/components/${component}.sh"
+    if [ -f "$component_hook" ]; then
+        var_name="COMPONENT_${component^^}"
+        ( source "$component_hook" "${!var_name}" ) &>/dev/null &
+    fi
+done
+
+# Esperar únicamente a que los componentes visuales críticos terminen
+for pid in "${ui_pids[@]}"; do
+    wait "$pid" 2>/dev/null || true
+done
 
 # 3. Aplicar Hook
 if [ -n "$H_NAME" ]; then

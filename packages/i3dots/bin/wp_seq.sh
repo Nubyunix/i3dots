@@ -183,14 +183,17 @@ elif [[ $# -eq 2 ]]; then
 
 
     (
-        "$BASE_DIR/core/bin/wp_select.sh" -C "$FINAL_PATH"
-        (polybar-msg cmd hide ; pkill -u $UID -x polybar) &>/dev/null &
+        "$BASE_DIR/core/bin/wp_select.sh" -C "$FINAL_PATH" &
+        p_wp=$!
         
         if [[ "$ACTIVE_MODE" == "light" ]]; then
-            engine_matugen.sh -m light -i "$color_src"
+            engine_matugen.sh -m light -i "$color_src" &
         else
-            engine_matugen.sh -m dark -i "$color_src"
+            engine_matugen.sh -m dark -i "$color_src" &
         fi
+        p_mat=$!
+        
+        wait "$p_wp" "$p_mat" 2>/dev/null || true
         
         [[ -n "$temp_to_clean" && -f "$temp_to_clean" ]] && rm -f "$temp_to_clean"
         rm -f /tmp/gdk-pixbuf-glycin-tmp.* 2>/dev/null
