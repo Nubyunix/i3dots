@@ -3,7 +3,7 @@ export PKG_MANAGER="apt"
 export PKG_UPDATE_CMD="update"
 export PKG_INSTALL_CMD="install -y"
 export PKG_QUERY_CMD="dpkg-query -W -f='\${Package}\n'"
-export PKG_LIST="i3-wm pcmanfm polybar rofi picom qt6ct lxappearance feh lxpolkit pipewire wireplumber fonts-jetbrains-mono fonts-font-awesome git curl wget unzip fontconfig imagemagick libvips-tools papirus-icon-theme fastfetch lua5.3 xsettingsd dash"
+export PKG_LIST="i3-wm pcmanfm polybar rofi picom qt6ct lxappearance feh lxpolkit pipewire wireplumber fonts-jetbrains-mono fonts-font-awesome git curl wget unzip fontconfig imagemagick libvips-tools papirus-icon-theme fastfetch lua5.3 xsettingsd dash alsa-utils"
 export PKG_LIVE="mpv xwinwrap ffmpegthumbnailer socat"
 export PKG_BUILD="gcc libx11-dev"
 

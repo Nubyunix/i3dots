@@ -168,7 +168,7 @@ if [ -n "$PKG_LIST" ] && [ -z "$SKIP_SYSTEM_PKGS" ]; then
     # Reemplazar saltos de línea por espacios para búsqueda exacta nativa en Bash
     INSTALLED_FLAT=" ${INSTALLED_PKGS//$'\n'/ } "
     for pkg in $PKG_LIST; do
-        if [[ "$INSTALLED_FLAT" =~ " $pkg " ]]; then
+        if [[ "$INSTALLED_FLAT" =~ " $pkg " ]] || [[ "$INSTALLED_FLAT" =~ " ${pkg}-git " ]] || command -v "$pkg" &>/dev/null; then
             continue
         else
             MISSING_PKGS+=("$pkg")
@@ -194,7 +194,9 @@ if [ -n "$PKG_LIST" ] && [ -z "$SKIP_SYSTEM_PKGS" ]; then
         INSTALLED_FLAT_POST=" $(eval "$PKG_QUERY_CMD" 2>/dev/null | tr '\n' ' ') "
         STILL_MISSING=()
         for pkg in "${MISSING_PKGS[@]}"; do
-            [[ ! "$INSTALLED_FLAT_POST" =~ " $pkg " ]] && STILL_MISSING+=("$pkg")
+            if [[ ! "$INSTALLED_FLAT_POST" =~ " $pkg " ]] && [[ ! "$INSTALLED_FLAT_POST" =~ " ${pkg}-git " ]] && ! command -v "$pkg" &>/dev/null; then
+                STILL_MISSING+=("$pkg")
+            fi
         done
         
         if [ ${#STILL_MISSING[@]} -eq 0 ]; then
@@ -619,11 +621,12 @@ if [ "$INTEGRATE_FM" != "none" ]; then
         if [ -f "$TEMPLATE_THUNAR" ]; then
             xml_chunk=$(sed "s|@PACKAGE_DIR@|$PACKAGE_DIR|g" "$TEMPLATE_THUNAR")
             if [ -f "$THUNAR_UCA" ]; then
-                if ! grep -q "i3dots-set-wallpaper" "$THUNAR_UCA"; then
-                    escaped_chunk=$(echo "$xml_chunk" | sed ':a;N;$!ba;s/\n/\\n/g')
-                    sed -i "s|</actions>|\t$escaped_chunk\n</actions>|" "$THUNAR_UCA"
-                    print_sub_ok "Acción de Wallpaper integrada en Thunar."
+                if grep -q "i3dots-set-wallpaper" "$THUNAR_UCA"; then
+                    python3 -c "import re; p = '$THUNAR_UCA'; c = open(p).read(); open(p, 'w').write(re.sub(r'\s*<action>(?:(?!</action>)[\s\S])*?i3dots-set-wallpaper(?:(?!</action>)[\s\S])*?</action>\n?', '', c))" 2>/dev/null || true
                 fi
+                escaped_chunk=$(echo "$xml_chunk" | sed ':a;N;$!ba;s/\n/\\n/g')
+                sed -i "s|</actions>|\t$escaped_chunk\n</actions>|" "$THUNAR_UCA"
+                print_sub_ok "Acción de Wallpaper integrada en Thunar."
             else
                 mkdir -p "$(dirname "$THUNAR_UCA")"
                 cat << EOF > "$THUNAR_UCA"
@@ -635,6 +638,7 @@ EOF
                 print_sub_ok "Creado archivo de acciones de Thunar con Wallpaper."
             fi
         fi
+        command -v thunar &>/dev/null && thunar -q 2>/dev/null || true
     fi
     
     # B. pcmanfm-qt / pcmanfm Actions

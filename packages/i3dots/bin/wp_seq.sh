@@ -130,6 +130,16 @@ elif [[ $# -eq 2 ]]; then
     SELECTION="$2"
     [[ -z "$SELECTION" ]] && exit 1
 
+    # Limpiar URI file:// y comillas envolventes residuales
+    if [[ "$SELECTION" =~ ^file:// ]]; then
+        SELECTION="${SELECTION#file://}"
+        SELECTION=$(printf '%b' "${SELECTION//%/\\x}")
+    fi
+    SELECTION="${SELECTION#\'}"
+    SELECTION="${SELECTION%\'}"
+    SELECTION="${SELECTION#\"}"
+    SELECTION="${SELECTION%\"}"
+
     # Registrar el modo seleccionado
     case "$MODE_FLAG" in
         "--mode-dark")   ACTIVE_MODE="dark"   ;;
