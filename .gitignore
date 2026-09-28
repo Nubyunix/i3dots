@@ -11,7 +11,7 @@ packages/*/dotfiles/gtk-3.0/colors.css
 packages/*/dotfiles/gtk-3.0/dank-colors.css
 packages/*/dotfiles/gtk-4.0/colors.css
 packages/*/dotfiles/gtk-4.0/dank-colors.css
-packages/*/dotfiles/kitty/colors.conf
+packages/*/dotfiles/st/themes/matugen.conf
 packages/*/dotfiles/matugen/wallpaper.txt
 packages/*/dotfiles/qt6ct/colors/matugen.conf
 packages/*/dotfiles/rofi/themes/shared/colors.rasi
@@ -35,7 +35,7 @@ packages/i3dots/config/gtk-3.0/colors.css
 packages/i3dots/config/gtk-3.0/bookmarks
 packages/i3dots/config/gtk-4.0/colors.css
 packages/i3dots/config/i3/*.generated
-packages/i3dots/config/kitty/colors.conf
+packages/i3dots/config/st/themes/matugen.conf
 packages/i3dots/config/qt6ct/colors/matugen.conf
 packages/i3dots/config/rofi/themes/shared/colors.rasi
 packages/i3dots/config/i3/current

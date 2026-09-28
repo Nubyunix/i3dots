@@ -32,7 +32,7 @@ print_step "Eliminando enlaces simbólicos en ~/.config y ~/.local/bin..."
 targets=(
     "$HOME/.config/i3"
     "$HOME/.config/rofi"
-    "$HOME/.config/kitty"
+    "$HOME/.config/st"
     "$HOME/.config/picom"
     "$HOME/.config/gtk-3.0"
     "$HOME/.config/gtk-4.0"

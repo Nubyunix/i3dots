@@ -15,10 +15,6 @@ output_path = "~/.config/polybar/colors.ini"
 input_path = "~/.config/matugen/templates/rofi-colors.rasi"
 output_path = "~/.config/rofi/themes/shared/colors.rasi"
 
-[templates.kitty]
-input_path = "~/.config/matugen/templates/kitty.conf"
-output_path = "~/.config/kitty/colors.conf"
-
 [templates.st]
 input_path = "~/.config/matugen/templates/st.conf"
 output_path = "~/.config/st/themes/matugen.conf"

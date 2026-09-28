@@ -3,7 +3,7 @@ export PKG_MANAGER="pacman"
 export PKG_UPDATE_CMD=""
 export PKG_INSTALL_CMD="-S --needed --noconfirm"
 export PKG_QUERY_CMD="pacman -Qq"
-export PKG_LIST="i3-wm polybar rofi kitty picom qt6ct lxappearance feh pipewire wireplumber libpulse xorg-setxkbmap brightnessctl playerctl maim xclip xdotool pcmanfm git curl wget unzip ttf-jetbrains-mono otf-font-awesome fontconfig imagemagick libvips papirus-icon-theme fastfetch lua xsettingsd dash"
+export PKG_LIST="i3-wm polybar rofi picom qt6ct lxappearance feh pipewire wireplumber libpulse xorg-setxkbmap brightnessctl playerctl maim xclip xdotool pcmanfm git curl wget unzip ttf-jetbrains-mono otf-font-awesome fontconfig imagemagick libvips papirus-icon-theme fastfetch lua xsettingsd dash"
 export PKG_LIVE="mpv xwinwrap ffmpegthumbnailer socat"
 export PKG_BUILD="gcc"
 
