@@ -329,16 +329,16 @@ if [ "$POLKIT_AGENT" = "/usr/lib/raven-polkit/raven-polkit-agent" ] && [ ! -x "$
     run_elevated bash -c "mkdir -p /usr/lib/raven-polkit && curl -sL https://github.com/Derszi65g/raven-polkit/releases/download/0.1.4/raven-polkit-x86_64-linux-glibc.tar.gz | tar -xz -C /usr/lib/raven-polkit"
 fi
 
-# 6.2 not-st (st)
-if ! command -v st &> /dev/null && [ "$IS_OFFLINE" != "true" ]; then
-    print_step "Instalando st desde release oficial..."
+# 6.2 not-st
+if { ! command -v not-st &> /dev/null || [ ! -x "/usr/local/bin/not-st" -a ! -x "/usr/bin/not-st" ]; } && [ "$IS_OFFLINE" != "true" ]; then
+    print_step "Instalando not-st desde release oficial..."
     TEMP_ST=$(mktemp -d)
     URL="https://github.com/Derszi65g/not-st/releases/download/v0.9.3/not-st-0.9.3-linux-x86_64.tar.gz"
     if curl -sL "$URL" | tar -xz -C "$TEMP_ST"; then
         run_elevated sh "$TEMP_ST/not-st-0.9.3-linux-x86_64/install.sh" &>> "$LOG_FILE" && \
-            print_sub_ok "st instalado correctamente a nivel de sistema." || print_sub_err "Fallo al ejecutar instalador de st."
+            print_sub_ok "not-st instalado correctamente a nivel de sistema." || print_sub_err "Fallo al ejecutar instalador de not-st."
     else
-        print_sub_err "Fallo al descargar release de st."
+        print_sub_err "Fallo al descargar release de not-st."
     fi
     rm -rf "$TEMP_ST"
 fi

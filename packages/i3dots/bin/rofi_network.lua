@@ -382,7 +382,9 @@ local function launch_qr_terminal(ssid, psk)
 	)
 
 	local term_cmd = nil
-	if has("st") then
+	if has("not-st") then
+		term_cmd = "not-st -c wifi-qr -t 'WiFi QR - " .. ssid .. "' -e bash -c " .. shq(inner_cmd)
+	elseif has("st") then
 		term_cmd = "st -c wifi-qr -t 'WiFi QR - " .. ssid .. "' -e bash -c " .. shq(inner_cmd)
 	elseif has("kitty") then
 		term_cmd = "kitty --class wifi-qr --title 'WiFi QR - " .. ssid .. "' -e bash -c " .. shq(inner_cmd)
@@ -461,7 +463,7 @@ local function launch_connection_manager()
 		os.execute("nohup nm-connection-editor >/dev/null 2>&1 &")
 		return
 	end
-	for _, term in ipairs({ "st", "kitty", "alacritty", "foot", "xterm" }) do
+	for _, term in ipairs({ "not-st", "st", "kitty", "alacritty", "foot", "xterm" }) do
 		if has(term) and has("nmtui") then
 			os.execute(term .. " -e nmtui >/dev/null 2>&1 &")
 			return

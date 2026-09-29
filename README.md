@@ -50,7 +50,7 @@ cd i3dots
 
 | Keys | Action |
 |:-|:-|
-| <kbd>Super</kbd> + <kbd>Return</kbd> | Abrir Terminal (st) |
+| <kbd>Super</kbd> + <kbd>Return</kbd> | Abrir Terminal (not-st) |
 | <kbd>Super</kbd> + <kbd>Q</kbd> | Cerrar ventana enfocada |
 | <kbd>Super</kbd> + <kbd>F</kbd> | Pantalla completa (fullscreen) |
 | <kbd>Super</kbd> + <kbd>D</kbd> | Rofi Launcher |

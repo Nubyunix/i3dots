@@ -6,7 +6,7 @@ Guía rápida de atajos de teclado y controles del sistema.
 
 | Atajo | Acción |
 | :--- | :--- |
-| <kbd>Super</kbd> + <kbd>Enter</kbd> | Abrir Terminal (st) |
+| <kbd>Super</kbd> + <kbd>Enter</kbd> | Abrir Terminal (not-st) |
 | <kbd>Super</kbd> + <kbd>Q</kbd> | Cerrar ventana enfocada |
 | <kbd>Super</kbd> + <kbd>F</kbd> | Pantalla completa (fullscreen) |
 | <kbd>Super</kbd> + <kbd>D</kbd> | Menú de aplicaciones (Rofi Launcher) |
