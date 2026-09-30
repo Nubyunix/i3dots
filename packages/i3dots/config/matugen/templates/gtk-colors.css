@@ -13,10 +13,10 @@
 @define-color headerbar_fg_color {{colors.on_surface.default.hex}};
 @define-color headerbar_border_color alpha({{colors.outline.default.hex}}, 0.4);
 @define-color headerbar_backdrop_color @window_bg_color;
-@define-color popover_bg_color {{palettes.neutral._15.hex}};
-@define-color popover_fg_color {{colors.on_surface.default.hex}};
-@define-color dialog_bg_color {{palettes.neutral._15.hex}};
-@define-color dialog_fg_color {{colors.on_surface.default.hex}};
+@define-color popover_bg_color @window_bg_color;
+@define-color popover_fg_color @window_fg_color;
+@define-color dialog_bg_color @window_bg_color;
+@define-color dialog_fg_color @window_fg_color;
 @define-color view_bg_color {{colors.surface.default.hex}};
 @define-color view_fg_color {{colors.on_surface.default.hex}};
 @define-color card_bg_color alpha(@window_fg_color, 0.07);
@@ -41,4 +41,50 @@
 @define-color warning_color {{colors.tertiary.default.hex}};
 @define-color error_color {{colors.error.default.hex}};
 @define-color success_color {{colors.primary.default.hex}};
+
+*,
+window, window *, window.background, decoration, .csd,
+dialog, dialog *, messagedialog, messagedialog *,
+menu, menu *, .menu, .context-menu, popover, popover *, popover.background,
+button, button *, .button, button.combo,
+combobox, combobox *, combobox button, combobox button.combo,
+combobox.linked button,
+.linked, .linked *, .linked > *, .linked > * > *,
+.linked:not(.vertical) > *, .linked:not(.vertical) > * > *, .linked:not(.vertical) > * > * > *,
+.linked.vertical > *, .linked.vertical > * > *, .linked.vertical > * > * > *,
+.linked:not(.vertical) > combobox:only-child > box > button.combo,
+.linked:not(.vertical) > combobox:first-child > box > button.combo,
+.linked:not(.vertical) > combobox:last-child > box > button.combo,
+.linked.vertical > combobox:only-child > box > button.combo,
+.linked.vertical > combobox:first-child > box > button.combo,
+.linked.vertical > combobox:last-child > box > button.combo,
+check, check *, check:checked, check:hover,
+treeview.view check, .content-view check,
+radio, radio *, radio:checked, radio:hover,
+treeview.view radio, .content-view radio,
+switch, switch *, switch slider,
+entry, entry *, spinbutton, spinbutton *,
+headerbar, .titlebar,
+tab, notebook tab, notebook > header > tabs > tab, tabbar tab,
+.card, card,
+row, list, list.content, list.content > row,
+scale, scale *, scale trough, scale slider,
+progressbar, progressbar *, progressbar progress, progressbar trough,
+levelbar, levelbar *, levelbar block, levelbar trough,
+scrollbar, scrollbar *, scrollbar slider, scrollbar trough,
+tooltip, tooltip.background,
+modelbutton, .menuitem {
+    border-radius: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    -gtk-outline-radius: 0;
+    -gtk-outline-top-left-radius: 0;
+    -gtk-outline-top-right-radius: 0;
+    -gtk-outline-bottom-left-radius: 0;
+    -gtk-outline-bottom-right-radius: 0;
+}
+
+
 
