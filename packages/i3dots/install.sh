@@ -509,14 +509,28 @@ export PATH="$HOME/.local/bin:$PATH"
 joined_links=$(printf ", %s" "${LINKS_MADE[@]}")
 [ ${#LINKS_MADE[@]} -gt 0 ] && print_sub_ok "Configuraciones enlazadas: ${joined_links:2}"
 
-# 8.5 Configurar GTK para root (opcional)
+# 8.5 Configurar temas GTK y Qt para root (opcional)
 if run_elevated_nopasswd; then
-    print_sub "Configurando tema GTK para root..."
-    run_elevated mkdir -p /root/.config /root/.themes
-    run_elevated cp -rf "$PACKAGE_DIR/config/gtk-3.0" "$PACKAGE_DIR/config/gtk-4.0" /root/.config/
-    [ -f "$PACKAGE_DIR/root/.gtkrc-2.0" ] && run_elevated cp -f "$PACKAGE_DIR/root/.gtkrc-2.0" /root/
-    [ -d "$HOME/.themes/adw-gtk3-dark" ] && run_elevated ln -sfn "$HOME/.themes/adw-gtk3-dark" /root/.themes/adw-gtk3-dark
-    print_sub_ok "Configuración GTK copiada a /root."
+    print_sub "Configurando temas GTK y Qt para root..."
+    run_elevated bash -c "
+        mkdir -p /root/.config
+        for cfg in gtk-3.0 gtk-4.0 qt5ct qt6ct Kvantum; do
+            if [ -d '$HOME/.config/\$cfg' ]; then
+                rm -rf '/root/.config/\$cfg'
+                ln -sfn '$HOME/.config/\$cfg' '/root/.config/\$cfg'
+            fi
+        done
+        [ -f '$PACKAGE_DIR/root/.gtkrc-2.0' ] && cp -f '$PACKAGE_DIR/root/.gtkrc-2.0' /root/
+        if [ -d '$HOME/.themes' ]; then
+            rm -rf /root/.themes
+            ln -sfn '$HOME/.themes' /root/.themes
+        fi
+        if [ -d '$HOME/.icons' ]; then
+            rm -rf /root/.icons
+            ln -sfn '$HOME/.icons' /root/.icons
+        fi
+    "
+    print_sub_ok "Enlaces de temas GTK y Qt creados en /root."
 fi
 
 # Permisos de ejecución

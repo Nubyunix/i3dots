@@ -130,8 +130,8 @@ if [ "$(id -u)" -eq 0 ] || command -v sudo &>/dev/null; then
     [ "$(id -u)" -ne 0 ] && SUDO_CMD="sudo"
     
     $SUDO_CMD rm -f /root/.gtkrc-2.0
-    $SUDO_CMD rm -rf /root/.config/gtk-3.0 /root/.config/gtk-4.0
-    $SUDO_CMD rm -f /root/.themes/adw-gtk3-dark
+    $SUDO_CMD rm -rf /root/.config/gtk-3.0 /root/.config/gtk-4.0 /root/.config/qt5ct /root/.config/qt6ct /root/.config/Kvantum
+    $SUDO_CMD rm -f /root/.themes /root/.icons /root/.themes/adw-gtk3-dark
     print_sub_ok "Configuraciones de root eliminadas."
 fi
 
