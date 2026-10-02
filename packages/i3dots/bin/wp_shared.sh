@@ -23,9 +23,9 @@ export PATH="$BIN_DIR:$PACKAGE_DIR/bin:$HOME/.local/bin:$PATH"
 if [[ ! -f "$WP_STATE_DIR/state.env" ]]; then
     touch "$WP_STATE_DIR/state.env"
     for var in "show_names_mode" "card_style" "join_text" "ind_text" "ind_block" "ind_border" "ind_underline" "ind_halo" "thumbnail_mode" "thumbnail_size" "no_thumb_mode" "bg_generation" "matugen_use_thumb" "active_mode"; do
-        local legacy_file="$WP_STATE_DIR/$var"
+        legacy_file="$WP_STATE_DIR/$var"
         if [[ -f "$legacy_file" ]]; then
-            local val=""
+            val=""
             read -r val < "$legacy_file"
             val="${val//[[:space:]]/}"
             if [[ -n "$val" ]]; then
@@ -34,6 +34,7 @@ if [[ ! -f "$WP_STATE_DIR/state.env" ]]; then
             rm -f "$legacy_file"
         fi
     done
+    unset var legacy_file val
 fi
 
 # Cargar variables de estado unificadas
@@ -125,6 +126,7 @@ load_thumb_index
 get_file_id() {
     local f="$1"
     [[ -f "$f" ]] || return 1
+    [[ -L "$f" ]] && f=$(readlink -f "$f")
     (head -c 65536 "$f"; tail -c 4096 "$f"; stat -c %s "$f") 2>/dev/null | sha256sum | cut -c 1-16
 }
 
@@ -132,16 +134,26 @@ get_file_id() {
 # Retorna en variable global RET_THUMB para evitar subshells $(...)
 get_thumb_path() {
     local real_file="$1"
+    [[ -L "$real_file" ]] && real_file=$(readlink -f "$real_file")
     local crop_mode="${2:-$THUMB_CROP_MODE}"
     local force_rehash="${3:-0}"
-    local cid="${WP_THUMB_INDEX["$real_file"]}"
+    local old_cid="${WP_THUMB_INDEX["$real_file"]}"
+    local cid="$old_cid"
 
     if [[ -z "$cid" || "$force_rehash" -eq 1 ]] && [[ -f "$real_file" ]]; then
-        cid=$(get_file_id "$real_file")
-        if [[ -n "$cid" ]]; then
-            WP_THUMB_INDEX["$real_file"]="$cid"
-            mkdir -p "$(dirname "$WP_INDEX_FILE")"
-            printf "%s %s\n" "$cid" "$real_file" >> "$WP_INDEX_FILE"
+        local new_cid
+        new_cid=$(get_file_id "$real_file")
+        if [[ -n "$new_cid" ]]; then
+            if [[ "$new_cid" != "$old_cid" ]]; then
+                WP_THUMB_INDEX["$real_file"]="$new_cid"
+                mkdir -p "$(dirname "$WP_INDEX_FILE")"
+                if [[ -f "$WP_INDEX_FILE" ]]; then
+                    local tmp_idx="${WP_INDEX_FILE}.tmp.$$"
+                    awk -v t="$real_file" '{ idx = index($0, " "); if (idx > 0 && substr($0, idx+1) == t) next; print $0 }' "$WP_INDEX_FILE" > "$tmp_idx" 2>/dev/null && mv "$tmp_idx" "$WP_INDEX_FILE"
+                fi
+                printf "%s %s\n" "$new_cid" "$real_file" >> "$WP_INDEX_FILE"
+            fi
+            cid="$new_cid"
         fi
     fi
 

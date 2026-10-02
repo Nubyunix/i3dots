@@ -55,8 +55,8 @@ if [[ "$BG_GEN" -eq 1 ]]; then
         fi
         get_thumb_path "$real_file"
         thumb="$RET_THUMB"
-        if [[ ! -f "$thumb" || "$real_file" -nt "$thumb" ]]; then
-            if [[ "$real_file" -nt "$thumb" ]]; then
+        if [[ ! -f "$thumb" || ( -f "$thumb" && "$real_file" -nt "$thumb" ) ]]; then
+            if [[ -f "$thumb" && "$real_file" -nt "$thumb" ]]; then
                 get_thumb_path "$real_file" "$THUMB_CROP_MODE" 1
                 thumb="$RET_THUMB"
             fi
@@ -85,7 +85,7 @@ if [[ "$CACHE_NOW" -eq 1 ]]; then
         fi
         get_thumb_path "$real_file"
         thumb="$RET_THUMB"
-        if [[ ! -f "$thumb" || "$real_file" -nt "$thumb" ]]; then
+        if [[ ! -f "$thumb" || ( -f "$thumb" && "$real_file" -nt "$thumb" ) ]]; then
             pending+=("$real_file")
         fi
     done
@@ -101,7 +101,7 @@ if [[ "$CACHE_NOW" -eq 1 ]]; then
     for file in "${pending[@]}"; do
         count=$((count+1))
         echo -e "\e[1A\e[K[$count/$total] Procesando: ${file##*/}"
-        get_thumb_path "$file" "$THUMB_CROP_MODE" 1
+        get_thumb_path "$file" "$THUMB_CROP_MODE" 0
         thumb="$RET_THUMB"
         generate_single_thumb "$file" "$thumb"
     done
@@ -126,6 +126,7 @@ if [[ "$CLEAN_CACHE" -eq 1 ]]; then
             fi
             
             declare -A active_thumbs
+            declare -A indexed_paths
             declare -a new_index_lines=()
             
             while IFS= read -r file; do
@@ -135,6 +136,8 @@ if [[ "$CLEAN_CACHE" -eq 1 ]]; then
                 else
                     real_file="$file"
                 fi
+                [[ -n "${indexed_paths["$real_file"]}" ]] && continue
+                indexed_paths["$real_file"]=1
                 
                 # Resuelve ruta, ejecuta migración heredada y asegura CID
                 get_thumb_path "$real_file"
