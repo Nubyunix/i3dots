@@ -2,6 +2,7 @@
 .current_variant
 *.generated
 *.log
+graphify-out/
 
 # Directorio de persistencia de estado (Wallpaper activo, etc)
 core/state/

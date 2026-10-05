@@ -263,7 +263,7 @@ end
 
 -- ---------- Acciones de Red ----------
 
-local function connect_wifi(ap)
+local function connect_wifi(ap, saved_wifi)
 	local ssid = ap.ssid
 
 	-- Si ya está activa: confirmar si desea desconectar
@@ -284,21 +284,41 @@ local function connect_wifi(ap)
 	end
 
 	-- Verificar si ya es una conexión guardada en perfiles
-	local _, c_saved = run("nmcli -t -f NAME connection show id " .. shq(ssid))
-	local is_saved = (c_saved == 0)
+	local profile = (saved_wifi and saved_wifi[ssid])
+	local is_saved = false
+	local target_id = ssid
+
+	if profile then
+		is_saved = true
+		target_id = profile.name
+	else
+		local _, c_saved = run("nmcli connection show id " .. shq(ssid))
+		if c_saved == 0 then
+			is_saved = true
+			target_id = ssid
+		end
+	end
 
 	if is_saved then
 		notify("[WIFI] Conectando...", "Activando conexión guardada " .. ssid)
-		local out, c = run("nmcli connection up id " .. shq(ssid))
+		local out, c = run("nmcli connection up id " .. shq(target_id))
 		if c == 0 then
 			notify("[OK] Conexión establecida", "Conectado exitosamente a " .. ssid)
+			return
 		else
-			notify("[ERROR] Error al conectar", "No se pudo conectar a " .. ssid .. ": " .. strip(out), "critical")
+			-- Si falló la activación de la conexión guardada (ej. clave cambiada en el router)
+			local items = {
+				{ label = "Ingresar nueva clave para " .. ssid, action = "reauth" },
+				{ label = "Cancelar", action = "cancel" }
+			}
+			local sel = rofi_menu("Fallo de Conexión Guardada", items)
+			if not sel or sel.action ~= "reauth" then
+				return
+			end
 		end
-		return
 	end
 
-	-- Red nueva con clave
+	-- Red nueva con clave o reautenticación
 	local is_open = (ap.sec == "Abierta" or ap.sec == "--" or ap.sec == "" or ap.sec:match("NONE"))
 	local password = nil
 	if not is_open then
@@ -490,6 +510,13 @@ local function main()
 	-- 2. Consultar datos en lote en una sola ejecución ultrarrápida (~35 ms)
 	local aps, profiles = fetch_all_data()
 
+	local saved_wifi = {}
+	for _, p in ipairs(profiles) do
+		if (p.type == "802-11-wireless" or p.type == "wifi") and p.name and p.name ~= "" then
+			saved_wifi[p.name] = p
+		end
+	end
+
 	local items = {}
 	local active_indices = {}
 	local active_wifi_ssid = nil
@@ -498,9 +525,10 @@ local function main()
 	if wifi_on then
 		for _, ap in ipairs(aps) do
 			if ap.active then active_wifi_ssid = ap.ssid end
+			local is_saved = (saved_wifi[ap.ssid] ~= nil)
 			local icon = signal_icon(ap.signal)
 			local sec_badge = (ap.sec == "Abierta") and "󰌘 -" or ("󰌘 " .. ap.sec)
-			local status = ap.active and "[Conectado]" or ""
+			local status = ap.active and "[Conectado]" or (is_saved and "[Guardada]" or "")
 			local label = string.format("%-2s  %-24s  %-15s  %3d%%  %s", icon, ap.ssid:sub(1, 24), sec_badge, ap.signal, status)
 
 			local item = {
@@ -560,7 +588,7 @@ local function main()
 
 	local has_saved_wifi = false
 	for _, p in ipairs(profiles) do
-		if p.type == "802-11-wireless" then
+		if p.type == "802-11-wireless" or p.type == "wifi" then
 			has_saved_wifi = true
 			break
 		end
@@ -579,7 +607,7 @@ local function main()
 
 	-- 7. Procesar selección
 	if sel.type == "ap" then
-		connect_wifi(sel.ap)
+		connect_wifi(sel.ap, saved_wifi)
 	elseif sel.type == "toggle" then
 		toggle_connection(sel.name, sel.active)
 	elseif sel.type == "toggle_wifi" then
