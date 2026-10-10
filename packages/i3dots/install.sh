@@ -493,6 +493,7 @@ safe_link "$PACKAGE_DIR/bin/toggle_borders.sh" "$HOME/.local/bin/toggle_borders.
 safe_link "$PACKAGE_DIR/bin/sys_control.sh" "$HOME/.local/bin/sys_control.sh"
 safe_link "$PACKAGE_DIR/bin/rofi_network.lua" "$HOME/.local/bin/network_dmenu"
 safe_link "$PACKAGE_DIR/bin/bar_menu.sh" "$HOME/.local/bin/bar_menu.sh"
+safe_link "$PACKAGE_DIR/bin/screenshot.sh" "$HOME/.local/bin/screenshot.sh"
 safe_link "$PACKAGE_DIR/bin/wall_menu.sh" "$HOME/.local/bin/wall_menu.sh"
 safe_link "$PACKAGE_DIR/bin/show_cheatsheet.sh" "$HOME/.local/bin/show_cheatsheet.sh"
 safe_link "$CORE_DIR/bin/powermenu.sh" "$HOME/.local/bin/powermenu.sh"

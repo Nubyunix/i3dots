@@ -53,6 +53,7 @@ targets=(
     "$HOME/.local/bin/xic"
     "$HOME/.local/bin/network_dmenu"
     "$HOME/.local/bin/bar_menu.sh"
+    "$HOME/.local/bin/screenshot.sh"
     "$HOME/.local/bin/wall_menu.sh"
     "$HOME/.local/bin/show_cheatsheet.sh"
     "$HOME/.local/bin/powermenu.sh"
