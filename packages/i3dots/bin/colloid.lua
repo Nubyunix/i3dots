@@ -3,7 +3,7 @@ local colloid = {}
 
 colloid.name = "Colloid"
 colloid.color_regex = "#5294e2|#60c0f0|#357ec7"
-colloid.backup_clean_pattern = "*pink*"
+colloid.backup_clean_pattern = nil
 
 colloid.find_exclusions = {
     "! -path \"*@2x*\"",

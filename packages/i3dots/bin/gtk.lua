@@ -16,19 +16,21 @@ function gtk.setup_theme_variant(base_theme, variant)
     end
     if not common.path_exists(base_path) then return false end
 
-    -- Clonar estructura de enlaces simbólicos del tema base
-    os.execute("mkdir -p " .. common.home .. "/.themes")
-    os.execute("rm -rf " .. custom_dir)
-    os.execute("cp -as " .. base_path .. " " .. custom_dir)
+    -- Clonar estructura de enlaces simbólicos del tema base solo si no existe
+    if not common.path_exists(custom_dir .. "/index.theme") then
+        os.execute("mkdir -p " .. common.home .. "/.themes")
+        os.execute("rm -rf " .. custom_dir)
+        os.execute("cp -as " .. base_path .. " " .. custom_dir)
 
-    -- Personalizar index.theme (quitar enlace primero)
-    local index_path = custom_dir .. "/index.theme"
-    local idx = common.read_file(index_path)
-    if idx then
-        os.remove(index_path)
-        idx = idx:gsub("(Name%s*=%s*)[^\n]*",     "%1" .. custom_name)
-        idx = idx:gsub("(GtkTheme%s*=%s*)[^\n]*", "%1" .. custom_name)
-        common.write_file(index_path, idx)
+        -- Personalizar index.theme (quitar enlace primero)
+        local index_path = custom_dir .. "/index.theme"
+        local idx = common.read_file(index_path)
+        if idx then
+            os.remove(index_path)
+            idx = idx:gsub("(Name%s*=%s*)[^\n]*",     "%1" .. custom_name)
+            idx = idx:gsub("(GtkTheme%s*=%s*)[^\n]*", "%1" .. custom_name)
+            common.write_file(index_path, idx)
+        end
     end
 
     -- Leer colores frescos generados por Matugen
@@ -88,15 +90,7 @@ local function apply_gtkrc(path, icon_theme, widget_theme)
 end
 
 local function signal_xsettingsd()
-    local sh = [[
-if pgrep -a -x xsettingsd 2>/dev/null | grep -q "\.config/xsettingsd/xsettingsd\.conf"; then
-    pkill -HUP xsettingsd 2>/dev/null || true
-else
-    pkill -x xsettingsd 2>/dev/null || true
-    xsettingsd -c "$HOME/.config/xsettingsd/xsettingsd.conf" >/dev/null 2>&1 &
-fi
-]]
-    os.execute("bash -c " .. string.format("%q", sh))
+    os.execute("pkill -HUP xsettingsd 2>/dev/null || (xsettingsd -c \"" .. common.home .. "/.config/xsettingsd/xsettingsd.conf\" >/dev/null 2>&1 &)")
 end
 
 local function apply_xsettingsd(path, icon_theme, widget_theme)
@@ -139,11 +133,15 @@ function gtk.apply(icon_theme, widget_theme)
     common.write_file(common.home .. "/.config/gtk-3.0/gtk.css", "/* Desactivado para recarga en caliente */\n")
     common.write_file(common.home .. "/.config/gtk-4.0/gtk.css", "/* Desactivado para recarga en caliente */\n")
 
+    local gsettings_cmds = {}
     if icon_theme then
-        os.execute('command -v gsettings &>/dev/null && gsettings set org.gnome.desktop.interface icon-theme "'   .. icon_theme   .. '" || true')
+        table.insert(gsettings_cmds, 'gsettings set org.gnome.desktop.interface icon-theme "' .. icon_theme .. '"')
     end
     if widget_theme then
-        os.execute('command -v gsettings &>/dev/null && gsettings set org.gnome.desktop.interface gtk-theme "' .. widget_theme .. '" || true')
+        table.insert(gsettings_cmds, 'gsettings set org.gnome.desktop.interface gtk-theme "' .. widget_theme .. '"')
+    end
+    if #gsettings_cmds > 0 then
+        os.execute('( ' .. table.concat(gsettings_cmds, " & ") .. ' & ) >/dev/null 2>&1 &')
     end
 
     apply_xsettingsd(xconf, icon_theme, widget_theme)

@@ -3,16 +3,8 @@ local common = require("common")
 local qt = {}
 
 function qt.sync_timestamp()
-    local val = 0
-    local handle = io.popen("xprop -root _QT_SETTINGS_TIMESTAMP 2>/dev/null")
-    if handle then
-        local res = handle:read("*a"); handle:close()
-        local num = res:match("=%s*(%d+)")
-        local parsed = num and tonumber(num)
-        if parsed then val = math.floor(parsed) end
-    end
-    val = (val + 1) % 2000000000
-    os.execute("xprop -root -f _QT_SETTINGS_TIMESTAMP 32c -set _QT_SETTINGS_TIMESTAMP " .. val .. " 2>/dev/null || true")
+    local val = math.floor(os.time()) % 2000000000
+    os.execute("xprop -root -f _QT_SETTINGS_TIMESTAMP 32c -set _QT_SETTINGS_TIMESTAMP " .. val .. " 2>/dev/null &")
 end
 
 local function write_icon_theme(theme)

@@ -73,6 +73,7 @@ function common.resolve_color(color_arg, persist_file)
         if not s then return nil end
         return s:gsub("%s+", "")
     end
+    color = color:gsub("^#", "")
     if not color:match("^[0-9a-fA-F]%x%x%x%x%x$") then
         io.stderr:write("Color hex inválido: " .. color .. "\n")
         return nil
@@ -164,27 +165,14 @@ end
 
 -- ── Theme cleanup ─────────────────────────────────────────────────────────────
 
--- Elimina variantes Custom inactivas y backups de otros temas.
--- keep_icon_theme  : e.g. "Papirus-Dark-Custom-A"
--- keep_widget_theme: e.g. "adw-gtk3-dark-Custom-A"
+-- Elimina variantes Custom inactivas y backups de otros temas en segundo plano.
 function common.cleanup_old_themes(keep_icon_theme, keep_widget_theme)
     local icon_prefix   = keep_icon_theme   and keep_icon_theme:match("^(.*%-Custom%-)[AB]$")   or keep_icon_theme
     local widget_prefix = keep_widget_theme and keep_widget_theme:match("^(.*%-Custom%-)[AB]$") or keep_widget_theme
 
-    local rm_cmds = {}
-    for _, dir in ipairs({ "/dev/shm", common.home .. "/.icons", common.home .. "/.themes" }) do
-        local paths = common.dir_list(dir, 1, "*-Custom*")
-        for _, path in ipairs(paths) do
-            local name = path:match("([^/]+)$")
-            if name then
-                local keep = false
-                if icon_prefix   and name:sub(1, #icon_prefix)   == icon_prefix   then keep = true end
-                if widget_prefix and name:sub(1, #widget_prefix) == widget_prefix then keep = true end
-                if not keep then table.insert(rm_cmds, "rm -rf " .. path) end
-            end
-        end
-    end
-    common.sh_batch(rm_cmds)
+    local cmd = string.format("bash -c 'for d in /dev/shm/*-Custom-* ~/.icons/*-Custom-* ~/.themes/*-Custom-*; do case \"$d\" in *%s*|*%s*|*-backup) ;; *) rm -rf \"$d\" ;; esac; done' >/dev/null 2>&1 &",
+        icon_prefix or "NONE", widget_prefix or "NONE")
+    os.execute(cmd)
 end
 
 -- ── Icon backup ───────────────────────────────────────────────────────────────
@@ -230,10 +218,20 @@ function common.create_backup(original_dir, backup_dir, exclusions, color_regex)
     ' sh {} + 2>/dev/null || true
     ]]
 
-    common.sh_batch({ cmd1, cmd2, cmd3 })
+    local cmd4 = 'find ' .. backup_dir .. ' -xtype l -delete 2>/dev/null || true'
+
+    common.sh_batch({ cmd1, cmd2, cmd3, cmd4 })
 end
 
 function common.is_ram_populated(ram_dir)
+    if not ram_dir or ram_dir == "" then return false end
+    if common.path_exists(ram_dir .. "/index.theme") then
+        if common.path_exists(ram_dir .. "/64x64/places/folder.svg")
+            or common.path_exists(ram_dir .. "/48x48/places/folder.svg")
+            or common.path_exists(ram_dir .. "/places/folder.svg") then
+            return true
+        end
+    end
     local p = io.popen("find " .. ram_dir .. " -name '*.svg' -print -quit 2>/dev/null")
     if not p then return false end
     local res = p:read("*a"); p:close()
@@ -242,6 +240,13 @@ end
 
 function common.is_theme_populated(dir)
     if not dir or dir == "" then return false end
+    if common.path_exists(dir .. "/index.theme") then
+        if common.path_exists(dir .. "/64x64/places/folder.svg")
+            or common.path_exists(dir .. "/48x48/places/folder.svg")
+            or common.path_exists(dir .. "/places/folder.svg") then
+            return true
+        end
+    end
     local p = io.popen("find -L " .. dir .. " -name '*.svg' -print -quit 2>/dev/null")
     if not p then return false end
     local res = p:read("*a"); p:close()
@@ -286,22 +291,31 @@ function common.ensure_persistent_symlink_tree(original_dir, ram_dir, backup_dir
     end
 end
 
-function common.copy_and_recolor(backup_dir, ram_dir, sed_exprs)
-    os.execute("cp -rd --remove-destination " .. backup_dir .. "/. " .. ram_dir .. "/")
-
-    if not sed_exprs or #sed_exprs == 0 then return end
+function common.copy_and_recolor(backup_dir, ram_dir, sed_exprs, engine)
+    if not sed_exprs or #sed_exprs == 0 then
+        os.execute("cp -rd --remove-destination " .. backup_dir .. "/. " .. ram_dir .. "/")
+        return
+    end
 
     local script_dir = debug.getinfo(1).source:match("@(.*)/") or ""
     local bin_c = script_dir .. "/recolor_svg"
+    local use_c = (engine ~= "sed") and common.path_exists(bin_c)
+    local success = false
 
-    if common.path_exists(bin_c) then
-        local args = { string.format("%q", bin_c), string.format("%q", ram_dir) }
+    if use_c then
+        local args = { string.format("%q", bin_c), "--src", string.format("%q", backup_dir), "--dst", string.format("%q", ram_dir) }
         for _, expr in ipairs(sed_exprs) do
             table.insert(args, string.format("%q", expr[1]))
             table.insert(args, string.format("%q", expr[2]))
         end
-        os.execute(table.concat(args, " ") .. " 2>/dev/null")
-    else
+        local res = os.execute(table.concat(args, " ") .. " 2>/dev/null")
+        if res == 0 or res == true then
+            success = true
+        end
+    end
+
+    if not success then
+        os.execute("cp -rd --remove-destination " .. backup_dir .. "/. " .. ram_dir .. "/")
         common.parallel_sed(ram_dir, sed_exprs)
     end
 end
@@ -354,9 +368,10 @@ end
 function common.load_appearance_config()
     local cfg_path = common.home .. "/.config/i3/appearance.ini"
     local cfg = {
-        dynamic_icons = true,
-        dynamic_gtk   = true,
-        storage_mode  = "ram",
+        dynamic_icons  = true,
+        dynamic_gtk    = true,
+        storage_mode   = "ram",
+        recolor_engine = "c",
     }
     local s = common.read_file(cfg_path)
     if s then
@@ -370,6 +385,8 @@ function common.load_appearance_config()
                     cfg.dynamic_gtk = (v == "true" or v == "1")
                 elseif k == "storage_mode" then
                     cfg.storage_mode = (v == "disk" or v == "hybrid") and "disk" or "ram"
+                elseif k == "recolor_engine" then
+                    cfg.recolor_engine = (v == "sed") and "sed" or "c"
                 end
             end
         end
@@ -380,10 +397,11 @@ end
 function common.save_appearance_config(cfg)
     local cfg_path = common.home .. "/.config/i3/appearance.ini"
     local content = string.format(
-        "dynamic_icons=%s\ndynamic_gtk=%s\nstorage_mode=%s\n",
+        "dynamic_icons=%s\ndynamic_gtk=%s\nstorage_mode=%s\nrecolor_engine=%s\n",
         cfg.dynamic_icons and "true" or "false",
         cfg.dynamic_gtk and "true" or "false",
-        cfg.storage_mode or "ram"
+        cfg.storage_mode or "ram",
+        cfg.recolor_engine or "c"
     )
     common.write_file(cfg_path, content)
 end
@@ -396,13 +414,12 @@ function common.persist_theme_to_disk(custom_icon_theme)
     os.execute("mkdir -p " .. common.home .. "/.icons")
     local tmp_disk = disk_dir .. "-tmp"
     os.execute("rm -rf " .. tmp_disk)
-    os.execute("cp -rL " .. ram_dir .. " " .. tmp_disk)
+    os.execute("cp -a " .. ram_dir .. " " .. tmp_disk)
     if common.path_exists(disk_dir .. "/index.theme") then
         os.execute("cp -f " .. disk_dir .. "/index.theme " .. tmp_disk .. "/index.theme")
     end
     os.execute("rm -rf " .. disk_dir)
     os.execute("mv " .. tmp_disk .. " " .. disk_dir)
-    os.execute("rm -rf " .. ram_dir)
     common.update_icon_cache(disk_dir)
     return true
 end

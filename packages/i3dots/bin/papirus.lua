@@ -3,7 +3,7 @@ local papirus = {}
 
 papirus.name = "Papirus"
 papirus.color_regex = "#5294e2|#4877b1|#1d344f"
-papirus.backup_clean_pattern = "*green*"
+papirus.backup_clean_pattern = nil
 
 papirus.find_exclusions = {
     "! -path \"*@2x*\"",
@@ -51,6 +51,8 @@ function papirus.get_symbolic_sed_expressions(color)
         { "currentColor", "#" .. color },
         { "color:#444444", "color:#" .. color },
         { "color:#4285f4", "color:#" .. color },
+        { "#4285f4", "#" .. color },
+        { "#2196f3", "#" .. color },
     }
 end
 

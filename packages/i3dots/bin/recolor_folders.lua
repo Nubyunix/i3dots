@@ -57,31 +57,54 @@ end
 -- Recolorea todos los *-symbolic.svg de src_dirs en sus dst_dirs correspondientes.
 -- src_dirs: lista de {src_abs, dst_abs}
 -- sym_sed: tabla de { patron, reemplazo }
-local function recolor_symbolic_dirs_batch(src_dst_pairs, sym_sed, ln_cmds)
+-- engine: "c" o "sed"
+local function recolor_symbolic_dirs_batch(src_dst_pairs, sym_sed, ln_cmds, engine)
     if not src_dst_pairs or #src_dst_pairs == 0 then return end
 
     -- Construir paths de búsqueda (solo los que existen)
     local valid_pairs = {}
-    local search_paths = {}
     for _, pair in ipairs(src_dst_pairs) do
         if common.path_exists(pair[1]) then
             table.insert(valid_pairs, pair)
-            table.insert(search_paths, pair[1])
         end
     end
-    if #search_paths == 0 then return end
+    if #valid_pairs == 0 then return end
+
+    -- Modo motor C: delegar al binario recolor_svg nativo multi-hilo
+    local script_dir = debug.getinfo(1).source:match("@(.*)/") or ""
+    local bin_c = script_dir .. "/recolor_svg"
+    local use_c = (engine ~= "sed") and sym_sed and #sym_sed > 0 and common.path_exists(bin_c)
+
+    if use_c then
+        local args = { string.format("%q", bin_c), "--symbolic", "--patterns" }
+        for _, expr in ipairs(sym_sed) do
+            table.insert(args, string.format("%q", expr[1]))
+            table.insert(args, string.format("%q", expr[2]))
+        end
+        table.insert(args, "--dirs")
+        for _, pair in ipairs(valid_pairs) do
+            table.insert(args, string.format("%q", pair[1]))
+            table.insert(args, string.format("%q", pair[2]))
+        end
+        local res = os.execute(table.concat(args, " ") .. " 2>/dev/null")
+        if res == 0 or res == true then
+            return
+        end
+    end
+
+    -- Modo clásico / fallback (Lua secuencial)
+    local search_paths = {}
+    local mkdirs = {}
+    for _, pair in ipairs(valid_pairs) do
+        table.insert(search_paths, pair[1])
+        mkdirs[pair[1]] = pair[2]
+    end
 
     -- Un solo find para todos los directorios fuente
     local cmd = "find " .. table.concat(search_paths, " ") ..
                 " -maxdepth 1 -type f -name '*-symbolic.svg' 2>/dev/null"
     local p = io.popen(cmd)
     if not p then return end
-
-    -- Preparar mkdir en batch
-    local mkdirs = {}
-    for _, pair in ipairs(valid_pairs) do
-        mkdirs[pair[1]] = pair[2]
-    end
 
     local writes = {}  -- { dst, content }
     for path in p:lines() do
@@ -125,22 +148,24 @@ local function recolor_symbolic_dirs_batch(src_dst_pairs, sym_sed, ln_cmds)
 end
 
 
-local function link_symbolic_icons(original_dir, ram_dir, disk_dir, sym_sed)
-    -- Enlazar directorios 'symbolic' del original al ram_dir (batch: un solo os.execute)
-    local p = io.popen("find " .. original_dir .. " -maxdepth 2 \\( -type d -o -type l \\) -name 'symbolic' 2>/dev/null")
-    local sym_link_cmds = {}
-    if p then
-        for path in p:lines() do
-            local rel = path:sub(#original_dir + 2)
-            local dst = ram_dir .. "/" .. rel
-            if not common.path_exists(dst) then
-                table.insert(sym_link_cmds, "mkdir -p " .. (dst:match("^(.*)/") or "") .. " && ln -sfn " .. path .. " " .. dst)
+local function link_symbolic_icons(original_dir, ram_dir, disk_dir, sym_sed, engine)
+    -- Enlazar directorios 'symbolic' del original al ram_dir solo si no existen aún
+    if not common.path_exists(ram_dir .. "/16x16/symbolic") and not common.path_exists(ram_dir .. "/places/symbolic") then
+        local p = io.popen("find " .. original_dir .. " -maxdepth 2 \\( -type d -o -type l \\) -name 'symbolic' 2>/dev/null")
+        local sym_link_cmds = {}
+        if p then
+            for path in p:lines() do
+                local rel = path:sub(#original_dir + 2)
+                local dst = ram_dir .. "/" .. rel
+                if not common.path_exists(dst) then
+                    table.insert(sym_link_cmds, "mkdir -p " .. (dst:match("^(.*)/") or "") .. " && ln -sfn " .. path .. " " .. dst)
+                end
             end
+            p:close()
         end
-        p:close()
-    end
-    if #sym_link_cmds > 0 then
-        os.execute(table.concat(sym_link_cmds, " && "))
+        if #sym_link_cmds > 0 then
+            os.execute(table.concat(sym_link_cmds, " && "))
+        end
     end
 
     local function ensure_disk_link(subdir)
@@ -153,28 +178,30 @@ local function link_symbolic_icons(original_dir, ram_dir, disk_dir, sym_sed)
     local cd_sz = { "16", "22", "24" }
     local ln_cmds = {}
 
-    -- Papirus: symbolic/places, symbolic/categories, symbolic/devices, symbolic/apps (batch: 1 find para todos)
-    local pi_pairs = {}
-    for _, s in ipairs(pi_sz) do
-        local base = ram_dir .. "/" .. s
-        table.insert(pi_pairs, { base .. "/symbolic/places",     base .. "/places"     })
-        table.insert(pi_pairs, { base .. "/symbolic/categories", base .. "/categories" })
-        table.insert(pi_pairs, { base .. "/symbolic/devices",    base .. "/devices"    })
-        table.insert(pi_pairs, { base .. "/symbolic/apps",       base .. "/apps"       })
-        ensure_disk_link(s)
+    -- Papirus: symbolic/places, symbolic/categories, symbolic/devices, symbolic/apps
+    if common.path_exists(ram_dir .. "/16x16/symbolic") then
+        local pi_pairs = {}
+        for _, s in ipairs(pi_sz) do
+            local base = ram_dir .. "/" .. s
+            table.insert(pi_pairs, { base .. "/symbolic/places",     base .. "/places"     })
+            table.insert(pi_pairs, { base .. "/symbolic/categories", base .. "/categories" })
+            table.insert(pi_pairs, { base .. "/symbolic/devices",    base .. "/devices"    })
+            table.insert(pi_pairs, { base .. "/symbolic/apps",       base .. "/apps"       })
+            ensure_disk_link(s)
+        end
+        recolor_symbolic_dirs_batch(pi_pairs, sym_sed, ln_cmds, engine)
+    -- Colloid: places/symbolic, devices/symbolic, categories/symbolic, apps/symbolic
+    elseif common.path_exists(ram_dir .. "/places/symbolic") then
+        local cd_pairs = {}
+        for _, s in ipairs(cd_sz) do
+            table.insert(cd_pairs, { ram_dir .. "/places/symbolic",     ram_dir .. "/places/" .. s     })
+            table.insert(cd_pairs, { ram_dir .. "/devices/symbolic",    ram_dir .. "/devices/" .. s    })
+            table.insert(cd_pairs, { ram_dir .. "/categories/symbolic", ram_dir .. "/categories/" .. s })
+            table.insert(cd_pairs, { ram_dir .. "/apps/symbolic",       ram_dir .. "/apps/" .. s       })
+            table.insert(cd_pairs, { original_dir .. "/categories/" .. s, ram_dir .. "/categories/" .. s })
+        end
+        recolor_symbolic_dirs_batch(cd_pairs, sym_sed, ln_cmds, engine)
     end
-    recolor_symbolic_dirs_batch(pi_pairs, sym_sed, ln_cmds)
-
-    -- Colloid: places/symbolic, devices/symbolic, categories/symbolic, apps/symbolic (batch: 1 find para todos)
-    local cd_pairs = {}
-    for _, s in ipairs(cd_sz) do
-        table.insert(cd_pairs, { ram_dir .. "/places/symbolic",     ram_dir .. "/places/" .. s     })
-        table.insert(cd_pairs, { ram_dir .. "/devices/symbolic",    ram_dir .. "/devices/" .. s    })
-        table.insert(cd_pairs, { ram_dir .. "/categories/symbolic", ram_dir .. "/categories/" .. s })
-        table.insert(cd_pairs, { ram_dir .. "/apps/symbolic",       ram_dir .. "/apps/" .. s       })
-        table.insert(cd_pairs, { original_dir .. "/categories/" .. s, ram_dir .. "/categories/" .. s })
-    end
-    recolor_symbolic_dirs_batch(cd_pairs, sym_sed, ln_cmds)
 
     if #ln_cmds > 0 then
         os.execute(table.concat(ln_cmds, " && "))
@@ -222,14 +249,16 @@ local function show_menu(settings_ini, base_file)
         local icon_status    = cfg.dynamic_icons and "[ Activado ]" or "[ Desactivado ]"
         local gtk_status     = cfg.dynamic_gtk and "[ Activado ]" or "[ Desactivado ]"
         local storage_status = (cfg.storage_mode == "disk") and "[ Híbrido Disco ]" or "[ RAM puro ]"
+        local engine_status  = (cfg.recolor_engine == "sed") and "[ sed clásico ]" or "[ Binario C (rápido) ]"
         
         local menu_text = string.format(
             "1. Iconos dinámicos:        %s\n" ..
             "2. Tema GTK dinámico:       %s\n" ..
             "3. Almacenamiento:          %s\n" ..
-            "4. Guardar tema actual en Disco (Permanente)\n" ..
-            "5. Restaurar temas de fábrica (Papirus + GTK limpio)",
-            icon_status, gtk_status, storage_status
+            "4. Motor de recoloreo:      %s\n" ..
+            "5. Guardar tema actual en Disco (Permanente)\n" ..
+            "6. Restaurar temas de fábrica (Papirus + GTK limpio)",
+            icon_status, gtk_status, storage_status, engine_status
         )
         
         local choice = run_rofi("Apariencia", menu_text)
@@ -272,6 +301,12 @@ local function show_menu(settings_ini, base_file)
                 os.execute("notify-send 'Apariencia' 'Modo RAM activado.' 2>/dev/null &")
             end
         elseif choice:find("^4%.") then
+            cfg.recolor_engine = (cfg.recolor_engine == "sed") and "c" or "sed"
+            common.save_appearance_config(cfg)
+            local msg = (cfg.recolor_engine == "sed") and "Motor de recoloreo: sed clásico activado." or "Motor de recoloreo: Binario C rápido activado."
+            os.execute("notify-send 'Apariencia' '" .. msg .. "' 2>/dev/null &")
+            os.execute("~/.local/bin/recolor_folders --restore >/dev/null 2>&1 &")
+        elseif choice:find("^5%.") then
             local xsettings_cfg = common.home .. "/.config/xsettingsd/xsettingsd.conf"
             local active_variant = common.detect_active_variant(xsettings_cfg)
             local active_theme = base_theme .. "-Custom-" .. active_variant
@@ -281,7 +316,7 @@ local function show_menu(settings_ini, base_file)
                 os.execute("notify-send 'Apariencia' 'Los iconos ya estaban en disco o no se encontraron en RAM.' 2>/dev/null &")
             end
             break
-        elseif choice:find("^5%.") then
+        elseif choice:find("^6%.") then
             cfg.dynamic_icons = false
             cfg.dynamic_gtk   = false
             common.save_appearance_config(cfg)
@@ -368,6 +403,7 @@ local function main()
 
     local prev_color = common.read_prev_color(persist_file)
     local color      = common.resolve_color(arg[1], persist_file)
+    if not color then os.exit(1) end
 
     local original_dir = common.find_theme_dir(base_theme)
     if not original_dir then
@@ -407,17 +443,17 @@ local function main()
 
     -- ── FASE 1: widget theme y señal Qt ──────────────────────────────────────
     if cfg.dynamic_gtk then
-        common.cleanup_old_themes(custom_icon_theme, custom_widget_theme)
         gtk.setup_theme_variant(widget_base, target_variant)
-        gtk.apply(nil, custom_widget_theme)
-    else
-        gtk.apply(nil, widget_base)
     end
 
     -- Si iconos dinámicos están desactivados, mantener base_theme y finalizar
     if not cfg.dynamic_icons then
-        gtk.apply(base_theme, nil)
+        local target_widget = cfg.dynamic_gtk and custom_widget_theme or widget_base
+        gtk.apply(base_theme, target_widget)
         qt.apply(base_theme)
+        if cfg.dynamic_gtk then
+            common.cleanup_old_themes(custom_icon_theme, custom_widget_theme)
+        end
         os.exit(0)
     end
 
@@ -450,12 +486,17 @@ local function main()
         end
     end
 
-    common.copy_and_recolor(backup_dir, ram_icon_dir, sed_exprs)
-    link_symbolic_icons(original_dir, ram_icon_dir, physical_icon_dir, sym_sed)
+    common.copy_and_recolor(backup_dir, ram_icon_dir, sed_exprs, cfg.recolor_engine)
+    link_symbolic_icons(original_dir, ram_icon_dir, physical_icon_dir, sym_sed, cfg.recolor_engine)
 
-    -- ── FASE 3: señalizar iconos GTK y cache ─────────────────────────────────
-    gtk.apply(custom_icon_theme, nil)
+    -- ── FASE 3: señalizar GTK y cache ────────────────────────────────────────
+    local target_widget = cfg.dynamic_gtk and custom_widget_theme or widget_base
+    gtk.apply(custom_icon_theme, target_widget)
     common.update_icon_cache(physical_icon_dir)
+
+    if cfg.dynamic_gtk then
+        common.cleanup_old_themes(custom_icon_theme, custom_widget_theme)
+    end
 
     -- Si el modo de almacenamiento es disco (híbrido), persistir a ~/.icons/
     if cfg.storage_mode == "disk" then
