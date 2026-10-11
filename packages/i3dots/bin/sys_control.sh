@@ -1,7 +1,7 @@
 #!/bin/bash
 
 notify() {
-    notify-send -r 555 -h int:value:"$1" "$2" "$3"
+    notify-send -a "sys_control" -r 555 -h boolean:transient:true -h boolean:x-i3dots-no-history:true -h int:value:"$1" "$2" "$3"
 }
 
 brightness() {

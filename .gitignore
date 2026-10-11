@@ -64,3 +64,5 @@ packages/i3dots/config/i3/icon_theme.base
 packages/i3dots/bin/xic
 packages/i3dots/bin/polybar_autohide
 packages/i3dots/bin/live_wp_daemon
+packages/i3dots/bin/notif_center
+packages/i3dots/bin/notif_daemon

@@ -74,7 +74,7 @@ export POLY_CENTER="left date right"
 export POLY_RIGHT="left cpu-temperature right"
 [ -n "$HAS_AUDIO" ] && POLY_RIGHT="$POLY_RIGHT space space left volume right"
 [ -n "$HAS_BATTERY" ] && POLY_RIGHT="$POLY_RIGHT space left battery right"
-export POLY_RIGHT="$POLY_RIGHT space left tray right space"
+export POLY_RIGHT="$POLY_RIGHT space left notif right space left tray right space"
 
 # Para tema compact
 export POLY_COMPACT_LEFT="rofi space filesystem filesystem-value space cpu cpu-value space memory memory-value"
@@ -93,7 +93,7 @@ export POLY_COMPACT_RIGHT="tray"
     export POLY_COMPACT_RIGHT="$POLY_COMPACT_RIGHT space battery battery-value"
 }
 
-export POLY_COMPACT_RIGHT="$POLY_COMPACT_RIGHT space time time-value"
+export POLY_COMPACT_RIGHT="$POLY_COMPACT_RIGHT space time time-value space notif"
 
 # 5. Cargar Estado de Estilo y Exportar a Entorno
 if [ -f "$STATE_FILE" ]; then
@@ -132,6 +132,7 @@ fi
 
 cat << EOF > "$STATIC_SCRIPT"
 #!/bin/dash
+export PATH="\$HOME/.local/bin:\$PATH"
 export BAR_HEIGHT="$BAR_HEIGHT"
 export BAR_POSITION="$BAR_POSITION"
 export BAR_STYLE="$BAR_STYLE"
@@ -165,6 +166,7 @@ EOF
 for bar in $BARS; do
     echo "/usr/bin/polybar -q \"$bar\" -c \"$CONFIG_FILE\" &" >> "$STATIC_SCRIPT"
 done
+echo "wait" >> "$STATIC_SCRIPT"
 
 chmod +x "$STATIC_SCRIPT"
 
@@ -176,5 +178,5 @@ if [ "$BAR_AUTOHIDE" == "true" ]; then
     $HOME/.local/bin/polybar_autohide --delay "${autohide_delay:-100}" --position "${BAR_POSITION:-bottom}" --method "${autohide_method:-kill}" &
 else
     # Lanzar barras usando el script estático de Dash recién creado
-    $STATIC_SCRIPT &
+    nohup "$STATIC_SCRIPT" >/dev/null 2>&1 &
 fi

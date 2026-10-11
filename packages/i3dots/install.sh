@@ -473,13 +473,17 @@ safe_link "$PACKAGE_DIR/bin/recolor_folders.lua" "$HOME/.local/bin/recolor_folde
 
 # Binarios precompilados o compilación
 BINS_SRC="$PACKAGE_DIR/distros/${VARIANT_NAME}/bins"
-for b in xic polybar_autohide live_wp_daemon; do
+for b in xic polybar_autohide live_wp_daemon notif_center notif_daemon; do
     if [ -f "$BINS_SRC/$b" ]; then
         safe_link "$BINS_SRC/$b" "$HOME/.local/bin/$b"
     elif [ -f "$PACKAGE_DIR/src/$b.c" ] && [ -z "$SKIP_SYSTEM_PKGS" ]; then
         print_sub "Compilando $b..."
         if [ "$b" = "live_wp_daemon" ]; then
             gcc -O3 "$PACKAGE_DIR/src/$b.c" -o "/tmp/$b" 2>> "$LOG_FILE"
+        elif [ "$b" = "notif_center" ]; then
+            gcc -O2 -s "$PACKAGE_DIR/src/$b.c" $(pkg-config --cflags --libs x11 cairo pangocairo jansson gdk-pixbuf-2.0 2>/dev/null) -lm -o "/tmp/$b" 2>> "$LOG_FILE"
+        elif [ "$b" = "notif_daemon" ]; then
+            gcc -O2 -s "$PACKAGE_DIR/src/$b.c" $(pkg-config --cflags --libs dbus-1 libpng jansson 2>/dev/null) -o "/tmp/$b" 2>> "$LOG_FILE"
         else
             gcc -Os -s -ffunction-sections -fdata-sections -Wl,--gc-sections \
                 "$PACKAGE_DIR/src/$b.c" -o "/tmp/$b" -lX11 2>> "$LOG_FILE"
