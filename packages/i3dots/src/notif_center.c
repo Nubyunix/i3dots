@@ -52,8 +52,10 @@ typedef struct {
 typedef struct {
     int panel_w;
     int margin_right;
+    int margin_gap;
     int margin_top;
     int margin_bottom;
+    bool auto_adjust_bar;
     double panel_radius;
     double card_radius;
     double button_radius;
@@ -77,6 +79,7 @@ typedef struct {
     char clean_body[512];
     char icon_path[256];
     char urls[512];
+    char avatar[64];
     int64_t timestamp_us;
     int64_t elapsed_sec;
     int urgency; /* 0: LOW, 1: NORMAL, 2: CRITICAL */
@@ -209,8 +212,10 @@ static Color hex_to_color(const char *hex, double alpha) {
 static void load_config(AppConfig *cfg) {
     cfg->panel_w = 400;
     cfg->margin_right = 12;
+    cfg->margin_gap = 12;
     cfg->margin_top = 42;
     cfg->margin_bottom = 14;
+    cfg->auto_adjust_bar = true;
     cfg->panel_radius = 0.0;
     cfg->card_radius = 0.0;
     cfg->button_radius = 0.0;
@@ -254,8 +259,12 @@ static void load_config(AppConfig *cfg) {
 
         if (strcmp(k, "width") == 0) cfg->panel_w = atoi(v);
         else if (strcmp(k, "margin_right") == 0) cfg->margin_right = atoi(v);
+        else if (strcmp(k, "margin_gap") == 0) cfg->margin_gap = atoi(v);
         else if (strcmp(k, "margin_top") == 0) cfg->margin_top = atoi(v);
         else if (strcmp(k, "margin_bottom") == 0) cfg->margin_bottom = atoi(v);
+        else if (strcmp(k, "auto_adjust_bar") == 0) {
+            cfg->auto_adjust_bar = (strcasecmp(v, "true") == 0 || strcmp(v, "1") == 0);
+        }
         else if (strcmp(k, "panel_radius") == 0) cfg->panel_radius = atof(v);
         else if (strcmp(k, "card_radius") == 0) cfg->card_radius = atof(v);
         else if (strcmp(k, "button_radius") == 0) cfg->button_radius = atof(v);
@@ -1215,7 +1224,10 @@ static int load_persistent_history(NotifCard *cards, int max_cards) {
 
         const char *avatar_fn = NULL;
         json_t *j_av = json_object_get(entry, "avatar");
-        if (j_av && json_is_string(j_av)) avatar_fn = json_string_value(j_av);
+        if (j_av && json_is_string(j_av)) {
+            avatar_fn = json_string_value(j_av);
+            snprintf(c->avatar, sizeof(c->avatar), "%s", avatar_fn);
+        }
 
         clean_notification_body(c->body, c->clean_body, sizeof(c->clean_body));
 
@@ -2070,18 +2082,151 @@ static void on_motion(AppState *app, int mx, int my) {
     }
 }
 
+static int find_dunst_id(const NotifCard *c) {
+    if (!c) return -1;
+
+    FILE *fp = popen("dunstctl history 2>/dev/null", "r");
+    if (!fp) return -1;
+
+    size_t size = 0;
+    size_t cap = 32768;
+    char *buf = malloc(cap);
+    if (!buf) {
+        pclose(fp);
+        return -1;
+    }
+
+    size_t bytes;
+    while ((bytes = fread(buf + size, 1, cap - size - 1, fp)) > 0) {
+        size += bytes;
+        if (size + 4096 >= cap) {
+            cap *= 2;
+            char *new_buf = realloc(buf, cap);
+            if (!new_buf) break;
+            buf = new_buf;
+        }
+    }
+    buf[size] = '\0';
+    pclose(fp);
+
+    if (size == 0) {
+        free(buf);
+        return -1;
+    }
+
+    json_error_t err;
+    json_t *root = json_loads(buf, 0, &err);
+    free(buf);
+    if (!root) return -1;
+
+    json_t *data_arr = json_object_get(root, "data");
+    if (!json_is_array(data_arr) || json_array_size(data_arr) == 0) {
+        json_decref(root);
+        return -1;
+    }
+
+    json_t *list = json_array_get(data_arr, 0);
+    if (!json_is_array(list)) {
+        json_decref(root);
+        return -1;
+    }
+
+    int matched_id = -1;
+    int fallback_match_id = -1;
+    size_t total = json_array_size(list);
+
+    for (size_t i = 0; i < total; i++) {
+        json_t *entry = json_array_get(list, i);
+        if (!json_is_object(entry)) continue;
+
+        int cur_id = -1;
+        const char *cur_app = "";
+        const char *cur_sum = "";
+        const char *cur_bod = "";
+
+        json_t *j_id = json_object_get(entry, "id");
+        if (j_id && json_is_object(j_id)) {
+            json_t *v = json_object_get(j_id, "data");
+            if (json_is_integer(v)) cur_id = (int)json_integer_value(v);
+        }
+
+        json_t *j_app = json_object_get(entry, "appname");
+        if (j_app && json_is_object(j_app)) {
+            json_t *v = json_object_get(j_app, "data");
+            if (json_is_string(v)) cur_app = json_string_value(v);
+        }
+
+        json_t *j_sum = json_object_get(entry, "summary");
+        if (j_sum && json_is_object(j_sum)) {
+            json_t *v = json_object_get(j_sum, "data");
+            if (json_is_string(v)) cur_sum = json_string_value(v);
+        }
+
+        json_t *j_bod = json_object_get(entry, "body");
+        if (j_bod && json_is_object(j_bod)) {
+            json_t *v = json_object_get(j_bod, "data");
+            if (json_is_string(v)) cur_bod = json_string_value(v);
+        }
+
+        /* 1. Exact ID match if card already has a valid Dunst ID */
+        if (c->id > 0 && cur_id == c->id) {
+            matched_id = cur_id;
+            break;
+        }
+
+        /* 2. Content match (for older entries or daemon id mismatches) */
+        if (fallback_match_id < 0 && cur_id > 0) {
+            bool app_matches = (c->appname[0] != '\0' && strcasecmp(cur_app, c->appname) == 0);
+            if (app_matches) {
+                bool sum_matches = (c->summary[0] != '\0' && (strstr(cur_sum, c->summary) != NULL || strstr(c->summary, cur_sum) != NULL));
+                bool bod_matches = (c->body[0] != '\0' && (strstr(cur_bod, c->body) != NULL || strstr(c->body, cur_bod) != NULL));
+                if (sum_matches && bod_matches) {
+                    fallback_match_id = cur_id;
+                } else if (sum_matches || bod_matches) {
+                    if (fallback_match_id < 0) fallback_match_id = cur_id;
+                }
+            }
+        }
+    }
+
+    json_decref(root);
+    return (matched_id > 0) ? matched_id : fallback_match_id;
+}
+
 static void relaunch_card(const NotifCard *c) {
     if (!c) return;
 
+    /* 1. If notification is in Dunst history, pop it directly from Dunst */
+    int dunst_id = find_dunst_id(c);
+    if (dunst_id > 0) {
+        char cmd[256];
+        snprintf(cmd, sizeof(cmd), "dunstctl history-pop %d &", dunst_id);
+        system(cmd);
+        return;
+    }
+
+    /* 2. Fallback if no longer in Dunst memory: invoke notify-send with real avatar */
     const char *app = (c->appname[0] != '\0') ? c->appname : "notif_center";
     const char *sum = (c->summary[0] != '\0') ? c->summary : "Notificación";
     const char *body = (c->clean_body[0] != '\0') ? c->clean_body : c->body;
     const char *urg = (c->urgency == 0) ? "low" : (c->urgency == 2) ? "critical" : "normal";
 
     char icon_path[768] = {0};
-    if (c->icon_path[0] != '\0' && access(c->icon_path, R_OK) == 0) {
+    if (c->avatar[0] != '\0') {
+        char assets_dir[512];
+        get_notif_paths(NULL, 0, NULL, 0, assets_dir, sizeof(assets_dir));
+        char full_av[768];
+        snprintf(full_av, sizeof(full_av), "%s/%s", assets_dir, c->avatar);
+        if (access(full_av, R_OK) == 0) {
+            snprintf(icon_path, sizeof(icon_path), "%s", full_av);
+        }
+    }
+
+    if (icon_path[0] == '\0' && c->icon_path[0] != '\0' && access(c->icon_path, R_OK) == 0) {
         snprintf(icon_path, sizeof(icon_path), "%s", c->icon_path);
-    } else {
+    }
+
+    if (icon_path[0] == '\0') {
         resolve_cached_avatar(c->appname, c->summary, icon_path, sizeof(icon_path));
         if (icon_path[0] == '\0' || access(icon_path, R_OK) != 0) {
             if (c->appname[0] != '\0') {
@@ -2115,9 +2260,17 @@ static void relaunch_card(const NotifCard *c) {
 static void activate_card(const NotifCard *c) {
     if (!c) return;
 
+    /* 1. Try to invoke default action via Dunst if notification is in Dunst history */
+    int dunst_id = find_dunst_id(c);
+    if (dunst_id > 0) {
+        char cmd[256];
+        snprintf(cmd, sizeof(cmd), "dunstctl history-pop %d && sleep 0.05 && dunstctl action 0 && dunstctl close %d &", dunst_id, dunst_id);
+        system(cmd);
+    }
+
     const char *app = (c->appname[0] != '\0') ? c->appname : "";
 
-    /* 1. Try focusing the application window via i3wm */
+    /* 2. Try focusing the application window via i3wm */
     char focus_cmd[1024] = {0};
     if (strcasecmp(app, "vesktop") == 0 || strcasecmp(app, "discord") == 0) {
         snprintf(focus_cmd, sizeof(focus_cmd), "i3-msg '[class=\"(?i)vesktop|discord\"] focus' >/dev/null 2>&1");
@@ -2146,8 +2299,8 @@ static void activate_card(const NotifCard *c) {
         focused = system(focus_cmd);
     }
 
-    /* 2. If window was not focused, check for URL or launch the application */
-    if (focused != 0) {
+    /* 3. If window was not focused and not in Dunst history, check for URL or launch the application */
+    if (focused != 0 && dunst_id <= 0) {
         if (c->urls[0] != '\0' && strstr(c->urls, "discordapp.net") == NULL) {
             char open_cmd[1024];
             snprintf(open_cmd, sizeof(open_cmd), "xdg-open '%s' >/dev/null 2>&1 &", c->urls);
@@ -2330,18 +2483,165 @@ static void on_button_release(AppState *app, int button, int mx, int my) {
     }
 }
 
+typedef enum {
+    BAR_POS_UNKNOWN,
+    BAR_POS_TOP,
+    BAR_POS_BOTTOM
+} BarPosition;
+
+typedef struct {
+    bool found;
+    BarPosition pos;
+    int bar_y;
+    int bar_h;
+} DetectedBar;
+
+static void find_polybar_window_rec(Display *dpy, Window root, Window w, int screen_h, DetectedBar *bar, int depth) {
+    if (bar->found || depth > 8) return;
+    XClassHint ch;
+    if (XGetClassHint(dpy, w, &ch)) {
+        if (ch.res_class && strcasecmp(ch.res_class, "Polybar") == 0) {
+            XWindowAttributes wa;
+            if (XGetWindowAttributes(dpy, w, &wa) && wa.map_state == IsViewable && wa.width > 200) {
+                int root_x = 0, root_y = 0;
+                Window child;
+                XTranslateCoordinates(dpy, w, root, 0, 0, &root_x, &root_y, &child);
+                bar->found = true;
+                bar->bar_y = root_y;
+                bar->bar_h = wa.height;
+                if (root_y < screen_h / 2) {
+                    bar->pos = BAR_POS_TOP;
+                } else {
+                    bar->pos = BAR_POS_BOTTOM;
+                }
+            }
+        }
+        if (ch.res_name) XFree(ch.res_name);
+        if (ch.res_class) XFree(ch.res_class);
+    }
+    if (bar->found) return;
+
+    Window root_ret, parent_ret;
+    Window *children = NULL;
+    unsigned int nchildren = 0;
+    if (XQueryTree(dpy, w, &root_ret, &parent_ret, &children, &nchildren) && children) {
+        for (unsigned int i = 0; i < nchildren && !bar->found; i++) {
+            find_polybar_window_rec(dpy, root, children[i], screen_h, bar, depth + 1);
+        }
+        XFree(children);
+    }
+}
+
+static DetectedBar detect_polybar_geometry(Display *dpy, Window root, int screen_h) {
+    DetectedBar bar = {false, BAR_POS_UNKNOWN, 0, 0};
+    find_polybar_window_rec(dpy, root, root, screen_h, &bar, 0);
+
+    /* If not found via active X11 windows (e.g. autohide is hiding it), fallback to config files */
+    if (!bar.found) {
+        const char *home = getenv("HOME");
+        char path[512];
+        bool is_bottom = true;
+        bool have_pos = false;
+        int bar_h = 33;
+
+        snprintf(path, sizeof(path), "%s/.config/polybar/variables.ini", home ? home : "");
+        FILE *f = fopen(path, "r");
+        if (f) {
+            char line[256];
+            while (fgets(line, sizeof(line), f)) {
+                if (strncmp(line, "bottom", 6) == 0) {
+                    char *eq = strchr(line, '=');
+                    if (eq) {
+                        char *v = eq + 1;
+                        while (isspace((unsigned char)*v)) v++;
+                        if (strncmp(v, "true", 4) == 0) { is_bottom = true; have_pos = true; }
+                        else if (strncmp(v, "false", 5) == 0) { is_bottom = false; have_pos = true; }
+                    }
+                } else if (strncmp(line, "height", 6) == 0) {
+                    char *eq = strchr(line, '=');
+                    if (eq) {
+                        int h_val = atoi(eq + 1);
+                        if (h_val > 10) bar_h = (int)(h_val * 1.8);
+                    }
+                }
+            }
+            fclose(f);
+        }
+
+        if (!have_pos) {
+            snprintf(path, sizeof(path), "%s/.config/i3dots/core/state/i3dots/bar/state.env", home ? home : "");
+            f = fopen(path, "r");
+            if (f) {
+                char line[256];
+                while (fgets(line, sizeof(line), f)) {
+                    if (strncmp(line, "position=", 9) == 0) {
+                        if (strstr(line, "top")) { is_bottom = false; have_pos = true; }
+                        else if (strstr(line, "bottom")) { is_bottom = true; have_pos = true; }
+                    }
+                }
+                fclose(f);
+            }
+        }
+
+        if (have_pos) {
+            bar.found = true;
+            bar.bar_h = bar_h;
+            if (is_bottom) {
+                bar.pos = BAR_POS_BOTTOM;
+                bar.bar_y = screen_h - bar_h;
+            } else {
+                bar.pos = BAR_POS_TOP;
+                bar.bar_y = 0;
+            }
+        }
+    }
+    return bar;
+}
+
+static void calculate_panel_geometry(AppState *app) {
+    app->panel_w = app->cfg.panel_w;
+    app->panel_x = app->screen_w - app->panel_w - app->cfg.margin_right;
+
+    if (!app->cfg.auto_adjust_bar) {
+        int top_margin = app->cfg.margin_top;
+        app->panel_y = top_margin;
+        app->panel_h = app->screen_h - top_margin - app->cfg.margin_bottom;
+        if (app->panel_h < 200) app->panel_h = 200;
+        return;
+    }
+
+    DetectedBar bar = detect_polybar_geometry(app->dpy, app->root, app->screen_h);
+    int gap = (app->cfg.margin_gap > 0) ? app->cfg.margin_gap : app->cfg.margin_right;
+    if (gap <= 0) gap = 12;
+
+    if (bar.found && bar.pos == BAR_POS_BOTTOM) {
+        /* Polybar is at the BOTTOM: panel starts near top, ends above Polybar */
+        app->panel_y = gap;
+        int bottom_limit = bar.bar_y - gap;
+        app->panel_h = bottom_limit - app->panel_y;
+    } else if (bar.found && bar.pos == BAR_POS_TOP) {
+        /* Polybar is at the TOP: panel starts below Polybar, ends near bottom */
+        int bar_bottom = bar.bar_y + bar.bar_h;
+        app->panel_y = bar_bottom + gap;
+        int bottom_limit = app->screen_h - gap;
+        app->panel_h = bottom_limit - app->panel_y;
+    } else {
+        /* Fallback: no bar detected, uniform gap on top and bottom */
+        app->panel_y = gap;
+        app->panel_h = app->screen_h - (gap * 2);
+    }
+
+    if (app->panel_h < 200) app->panel_h = 200;
+}
+
 static void reload_theme_and_config(AppState *app) {
     destroy_surface_cache();
     destroy_pango_cache(app);
     load_config(&app->cfg);
     load_theme(&app->theme);
 
-    /* Recalculate dimensions in case margins or width changed in config */
-    app->panel_w = app->cfg.panel_w;
-    int top_margin = app->cfg.margin_top;
-    app->panel_h = app->screen_h - top_margin - app->cfg.margin_bottom;
-    app->panel_x = app->screen_w - app->panel_w - app->cfg.margin_right;
-    app->panel_y = top_margin;
+    /* Recalculate dimensions dynamically according to Polybar position and config */
+    calculate_panel_geometry(app);
 
     XMoveResizeWindow(app->dpy, app->win, app->panel_x, app->panel_y, app->panel_w, app->panel_h);
 
@@ -2722,11 +3022,7 @@ int main(int argc, char *argv[]) {
 
     load_theme(&g_app.theme);
 
-    g_app.panel_w = g_app.cfg.panel_w;
-    int top_margin = g_app.cfg.margin_top;
-    g_app.panel_h = g_app.screen_h - top_margin - g_app.cfg.margin_bottom;
-    g_app.panel_x = g_app.screen_w - g_app.panel_w - g_app.cfg.margin_right;
-    g_app.panel_y = top_margin;
+    calculate_panel_geometry(&g_app);
 
     XSetWindowAttributes swa;
     swa.override_redirect = True;

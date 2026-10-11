@@ -190,7 +190,7 @@ static void save_avatar(const char *app, const char *summary, int w, int h, int 
     }
 }
 
-static void append_to_history(const char *app, const char *summary, const char *body, int urgency, const char *icon, const char *avatar) {
+static void append_to_history(const char *app, const char *summary, const char *body, int urgency, const char *icon, const char *avatar, int notif_id) {
     char sdir[512], hist_file[512], adir[512];
     get_notif_paths(sdir, sizeof(sdir), hist_file, sizeof(hist_file), adir, sizeof(adir));
     mkdir(sdir, 0755);
@@ -254,7 +254,10 @@ static void append_to_history(const char *app, const char *summary, const char *
         }
     }
 
-    int current_id = next_id++;
+    int current_id = (notif_id > 0) ? notif_id : next_id++;
+    if (current_id >= next_id) {
+        next_id = current_id + 1;
+    }
     json_object_set_new(root, "next_id", json_integer(next_id));
 
     json_t *item = json_object();
@@ -360,9 +363,59 @@ static void notify_center_if_running(void) {
     }
 }
 
+typedef struct {
+    dbus_uint32_t serial;
+    time_t received_at;
+    char app[128];
+    char summary[256];
+    char body[1024];
+    int urgency;
+    char icon[512];
+    char avatar[64];
+    bool active;
+} PendingNotify;
+
+#define MAX_PENDING 32
+static PendingNotify g_pending[MAX_PENDING];
+
+static void flush_stale_pending(void) {
+    time_t now = time(NULL);
+    for (int i = 0; i < MAX_PENDING; i++) {
+        if (g_pending[i].active && (now - g_pending[i].received_at) >= 2) {
+            append_to_history(g_pending[i].app, g_pending[i].summary, g_pending[i].body,
+                              g_pending[i].urgency, g_pending[i].icon, g_pending[i].avatar, 0);
+            notify_center_if_running();
+            g_pending[i].active = false;
+        }
+    }
+}
+
 static DBusHandlerResult filter_cb(DBusConnection *conn, DBusMessage *msg, void *user_data) {
     (void)conn;
     (void)user_data;
+
+    int mtype = dbus_message_get_type(msg);
+    if (mtype == DBUS_MESSAGE_TYPE_METHOD_RETURN) {
+        dbus_uint32_t reply_serial = dbus_message_get_reply_serial(msg);
+        if (reply_serial != 0) {
+            for (int i = 0; i < MAX_PENDING; i++) {
+                if (g_pending[i].active && g_pending[i].serial == reply_serial) {
+                    dbus_uint32_t notif_id = 0;
+                    DBusMessageIter ret_iter;
+                    if (dbus_message_iter_init(msg, &ret_iter) &&
+                        dbus_message_iter_get_arg_type(&ret_iter) == DBUS_TYPE_UINT32) {
+                        dbus_message_iter_get_basic(&ret_iter, &notif_id);
+                    }
+                    append_to_history(g_pending[i].app, g_pending[i].summary, g_pending[i].body,
+                                      g_pending[i].urgency, g_pending[i].icon, g_pending[i].avatar, (int)notif_id);
+                    notify_center_if_running();
+                    g_pending[i].active = false;
+                    return DBUS_HANDLER_RESULT_HANDLED;
+                }
+            }
+        }
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+    }
 
     if (!dbus_message_is_method_call(msg, "org.freedesktop.Notifications", "Notify")) {
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
@@ -500,9 +553,44 @@ static DBusHandlerResult filter_cb(DBusConnection *conn, DBusMessage *msg, void 
     }
 
     if (!is_relaunch && !no_history) {
+        flush_stale_pending();
         const char *icon_to_save = (image_path[0] != '\0') ? image_path : app_icon;
-        append_to_history(app, summary, body, urgency, icon_to_save, saved_avatar);
-        notify_center_if_running();
+        dbus_uint32_t call_serial = dbus_message_get_serial(msg);
+
+        int slot = -1;
+        time_t now = time(NULL);
+        for (int i = 0; i < MAX_PENDING; i++) {
+            if (!g_pending[i].active) {
+                slot = i;
+                break;
+            }
+        }
+        if (slot < 0) {
+            slot = 0;
+            time_t oldest = g_pending[0].received_at;
+            for (int i = 1; i < MAX_PENDING; i++) {
+                if (g_pending[i].received_at < oldest) {
+                    oldest = g_pending[i].received_at;
+                    slot = i;
+                }
+            }
+            if (g_pending[slot].active) {
+                append_to_history(g_pending[slot].app, g_pending[slot].summary, g_pending[slot].body,
+                                  g_pending[slot].urgency, g_pending[slot].icon, g_pending[slot].avatar, 0);
+                notify_center_if_running();
+                g_pending[slot].active = false;
+            }
+        }
+
+        g_pending[slot].serial = call_serial;
+        g_pending[slot].received_at = now;
+        snprintf(g_pending[slot].app, sizeof(g_pending[slot].app), "%s", app ? app : "Notificación");
+        snprintf(g_pending[slot].summary, sizeof(g_pending[slot].summary), "%s", summary ? summary : "");
+        snprintf(g_pending[slot].body, sizeof(g_pending[slot].body), "%s", body ? body : "");
+        g_pending[slot].urgency = urgency;
+        snprintf(g_pending[slot].icon, sizeof(g_pending[slot].icon), "%s", icon_to_save ? icon_to_save : "");
+        snprintf(g_pending[slot].avatar, sizeof(g_pending[slot].avatar), "%s", saved_avatar);
+        g_pending[slot].active = true;
     }
     return DBUS_HANDLER_RESULT_HANDLED;
 }
@@ -539,13 +627,17 @@ int main(void) {
         return 1;
     }
 
-    const char *rule = "type='method_call',interface='org.freedesktop.Notifications',member='Notify'";
-    const char *rules[] = { rule };
+    const char *rules[] = {
+        "type='method_call',interface='org.freedesktop.Notifications',member='Notify'",
+        "type='method_return'"
+    };
     dbus_uint32_t flags = 0;
     DBusMessageIter iter, sub;
     dbus_message_iter_init_append(msg, &iter);
     dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "s", &sub);
-    dbus_message_iter_append_basic(&sub, DBUS_TYPE_STRING, &rules[0]);
+    for (size_t i = 0; i < sizeof(rules) / sizeof(rules[0]); i++) {
+        dbus_message_iter_append_basic(&sub, DBUS_TYPE_STRING, &rules[i]);
+    }
     dbus_message_iter_close_container(&iter, &sub);
     dbus_message_iter_append_basic(&iter, DBUS_TYPE_UINT32, &flags);
 
@@ -556,6 +648,7 @@ int main(void) {
     prune_all_orphaned_assets();
 
     while (g_running && dbus_connection_read_write_dispatch(conn, 1000)) {
+        flush_stale_pending();
     }
 
     dbus_connection_unref(conn);
