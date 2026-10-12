@@ -481,9 +481,9 @@ for b in xic polybar_autohide live_wp_daemon notif_center notif_daemon; do
         if [ "$b" = "live_wp_daemon" ]; then
             gcc -O3 "$PACKAGE_DIR/src/$b.c" -o "/tmp/$b" 2>> "$LOG_FILE"
         elif [ "$b" = "notif_center" ]; then
-            gcc -O2 -s "$PACKAGE_DIR/src/$b.c" $(pkg-config --cflags --libs x11 cairo pangocairo jansson gdk-pixbuf-2.0 2>/dev/null) -lm -o "/tmp/$b" 2>> "$LOG_FILE"
+            gcc -O2 -s "$PACKAGE_DIR/src/$b.c" $(pkg-config --cflags --libs x11 cairo pangocairo jansson gdk-pixbuf-2.0 dbus-1 2>/dev/null) -lm -o "/tmp/$b" 2>> "$LOG_FILE"
         elif [ "$b" = "notif_daemon" ]; then
-            gcc -O2 -s "$PACKAGE_DIR/src/$b.c" $(pkg-config --cflags --libs dbus-1 libpng jansson 2>/dev/null) -o "/tmp/$b" 2>> "$LOG_FILE"
+            gcc -O2 -s "$PACKAGE_DIR/src/$b.c" $(pkg-config --cflags --libs dbus-1 libpng jansson x11 cairo pangocairo gdk-pixbuf-2.0 2>/dev/null) -lm -o "/tmp/$b" 2>> "$LOG_FILE"
         else
             gcc -Os -s -ffunction-sections -fdata-sections -Wl,--gc-sections \
                 "$PACKAGE_DIR/src/$b.c" -o "/tmp/$b" -lX11 2>> "$LOG_FILE"

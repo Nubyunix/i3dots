@@ -60,6 +60,3 @@ output_path = "~/.config/cava/themes/matugen"
 input_path = "~/.config/matugen/templates/recolor_folders.sh"
 output_path = "~/.cache/matugen/recolor_folders-apply.sh"
 
-[templates.dunst]
-input_path = "~/.config/matugen/templates/dunstrc"
-output_path = "~/.config/dunst/dunstrc"

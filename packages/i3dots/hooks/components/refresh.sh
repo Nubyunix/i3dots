@@ -6,4 +6,4 @@ pkill -USR1 -x not-st 2>/dev/null || true
 pkill -USR1 -x notif_center 2>/dev/null || true
 sleep 0.2
 pkill -USR2 cava 2>/dev/null || true
-dunstctl reload 2>/dev/null || true
+pkill -USR1 -x notif_daemon 2>/dev/null || true

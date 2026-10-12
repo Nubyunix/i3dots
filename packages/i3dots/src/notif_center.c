@@ -24,12 +24,129 @@
 #include <ctype.h>
 #include <sys/inotify.h>
 #include <dirent.h>
+#include <dbus/dbus.h>
 
 #define MAX_CARDS 1024
 #define LOCK_FILE "/tmp/notif_center.lock"
 #define CLOSE_STAMP_FILE "/tmp/notif_center.closed"
 #define DEBOUNCE_MS 60
 #define CARD_SPACING 8
+
+static void send_dbus_invoke_action(int id, const char *action_key) {
+    DBusError err;
+    dbus_error_init(&err);
+    DBusConnection *conn = dbus_bus_get(DBUS_BUS_SESSION, &err);
+    if (!conn) return;
+
+    DBusMessage *msg = dbus_message_new_method_call(
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+        "InvokeAction"
+    );
+    if (msg) {
+        dbus_uint32_t uid = (dbus_uint32_t)id;
+        const char *act = action_key ? action_key : "default";
+        DBusMessageIter iter;
+        dbus_message_iter_init_append(msg, &iter);
+        dbus_message_iter_append_basic(&iter, DBUS_TYPE_UINT32, &uid);
+        dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &act);
+
+        dbus_connection_send(conn, msg, NULL);
+        dbus_connection_flush(conn);
+        dbus_message_unref(msg);
+    }
+    dbus_connection_unref(conn);
+}
+
+static void send_dbus_close_notification(int id) {
+    DBusError err;
+    dbus_error_init(&err);
+    DBusConnection *conn = dbus_bus_get(DBUS_BUS_SESSION, &err);
+    if (!conn) return;
+
+    DBusMessage *msg = dbus_message_new_method_call(
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+        "DeleteNotification"
+    );
+    if (msg) {
+        dbus_uint32_t uid = (dbus_uint32_t)id;
+        DBusMessageIter iter;
+        dbus_message_iter_init_append(msg, &iter);
+        dbus_message_iter_append_basic(&iter, DBUS_TYPE_UINT32, &uid);
+
+        dbus_connection_send(conn, msg, NULL);
+        dbus_connection_flush(conn);
+        dbus_message_unref(msg);
+    }
+    dbus_connection_unref(conn);
+}
+
+static void send_dbus_close_all(void) {
+    DBusError err;
+    dbus_error_init(&err);
+    DBusConnection *conn = dbus_bus_get(DBUS_BUS_SESSION, &err);
+    if (!conn) return;
+
+    DBusMessage *msg = dbus_message_new_method_call(
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+        "CloseAll"
+    );
+    if (msg) {
+        dbus_connection_send(conn, msg, NULL);
+        dbus_connection_flush(conn);
+        dbus_message_unref(msg);
+    }
+    dbus_connection_unref(conn);
+}
+
+static bool send_dbus_toggle_dnd(void) {
+    DBusError err;
+    dbus_error_init(&err);
+    DBusConnection *conn = dbus_bus_get(DBUS_BUS_SESSION, &err);
+    if (!conn) return false;
+
+    DBusMessage *msg = dbus_message_new_method_call(
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+        "ToggleDND"
+    );
+    bool new_dnd = false;
+    if (msg) {
+        DBusMessage *reply = dbus_connection_send_with_reply_and_block(conn, msg, 1000, &err);
+        if (reply) {
+            dbus_bool_t val = 0;
+            if (dbus_message_get_args(reply, NULL, DBUS_TYPE_BOOLEAN, &val, DBUS_TYPE_INVALID)) {
+                new_dnd = val ? true : false;
+            }
+            dbus_message_unref(reply);
+        }
+        dbus_message_unref(msg);
+    }
+    dbus_connection_unref(conn);
+    return new_dnd;
+}
+
+static bool check_dnd_status(void) {
+    const char *home = getenv("HOME");
+    char path[512];
+    snprintf(path, sizeof(path), "%s/.config/i3dots/core/state/i3dots/notifications/dnd.state", home ? home : "/home/dereck");
+    FILE *f = fopen(path, "r");
+    if (f) {
+        char buf[16] = {0};
+        if (fgets(buf, sizeof(buf), f)) {
+            fclose(f);
+            return (strncmp(buf, "true", 4) == 0 || buf[0] == '1');
+        }
+        fclose(f);
+    }
+    return false;
+}
 
 typedef struct {
     double r, g, b, a;
@@ -538,10 +655,8 @@ static void extract_image_url(const char *urls, const char *body, char *out_url,
                 temp[ulen] = '\0';
 
                 if (strstr(temp, ".png") || strstr(temp, ".jpg") || strstr(temp, ".jpeg") ||
-                    strstr(temp, ".gif") || strstr(temp, ".webp") ||
-                    strstr(temp, "media.discordapp.net/stickers") ||
-                    strstr(temp, "cdn.discordapp.com/avatars") ||
-                    strstr(temp, "cdn.discordapp.com/attachments")) {
+                    strstr(temp, ".gif") || strstr(temp, ".webp") || strstr(temp, ".svg") ||
+                    strstr(temp, "format=png") || strstr(temp, "format=webp") || strstr(temp, "format=jpg")) {
                     snprintf(out_url, out_len, "%s", temp);
                     return;
                 }
@@ -743,26 +858,6 @@ static void resolve_icon(const char *name, char *out, size_t out_len) {
     }
     low_name[len] = '\0';
 
-    const char *aliases[8];
-    int alias_count = 0;
-    aliases[alias_count++] = low_name;
-    if (strcmp(low_name, "discord") == 0) {
-        aliases[alias_count++] = "com.discordapp.Discord";
-        aliases[alias_count++] = "vesktop";
-    } else if (strcmp(low_name, "vesktop") == 0) {
-        aliases[alias_count++] = "discord";
-        aliases[alias_count++] = "com.discordapp.Discord";
-    } else if (strstr(low_name, "telegram") != NULL) {
-        aliases[alias_count++] = "org.telegram.desktop";
-        aliases[alias_count++] = "telegramdesktop";
-        aliases[alias_count++] = "telegram";
-    } else if (strcmp(low_name, "spotify") == 0) {
-        aliases[alias_count++] = "spotify-client";
-    } else if (strcmp(low_name, "code") == 0 || strcmp(low_name, "vscode") == 0) {
-        aliases[alias_count++] = "visual-studio-code";
-        aliases[alias_count++] = "code-oss";
-    }
-
     const char *candidates[] = {
         "/usr/share/pixmaps/%s.png",
         "/usr/share/pixmaps/%s.svg",
@@ -779,14 +874,12 @@ static void resolve_icon(const char *name, char *out, size_t out_len) {
     };
 
     char buf[512];
-    for (int a = 0; a < alias_count; a++) {
-        for (int i = 0; candidates[i] != NULL; i++) {
-            snprintf(buf, sizeof(buf), candidates[i], aliases[a]);
-            if (access(buf, R_OK) == 0) {
-                snprintf(out, out_len, "%s", buf);
-                add_to_icon_cache(name, buf);
-                return;
-            }
+    for (int i = 0; candidates[i] != NULL; i++) {
+        snprintf(buf, sizeof(buf), candidates[i], low_name);
+        if (access(buf, R_OK) == 0) {
+            snprintf(out, out_len, "%s", buf);
+            add_to_icon_cache(name, buf);
+            return;
         }
     }
 
@@ -876,14 +969,6 @@ static int64_t get_monotonic_ms(void) {
     return 0;
 }
 
-static int64_t get_boottime_us(void) {
-    struct timespec ts;
-    if (clock_gettime(CLOCK_BOOTTIME, &ts) == 0) {
-        return (int64_t)ts.tv_sec * 1000000LL + (ts.tv_nsec / 1000);
-    }
-    return 0;
-}
-
 static void get_current_boot_id(char *out_id, size_t out_len) {
     if (!out_id || out_len == 0) return;
     out_id[0] = '\0';
@@ -895,18 +980,6 @@ static void get_current_boot_id(char *out_id, size_t out_len) {
         }
         fclose(fp);
     }
-}
-
-static bool check_dunst_paused(void) {
-    FILE *fp = popen("timeout 0.2s dunstctl is-paused 2>/dev/null", "r");
-    if (!fp) return false;
-    char buf[16];
-    bool paused = false;
-    if (fgets(buf, sizeof(buf), fp)) {
-        if (strncmp(buf, "true", 4) == 0) paused = true;
-    }
-    pclose(fp);
-    return paused;
 }
 
 static void free_card_surfaces(AppState *app) {
@@ -923,155 +996,6 @@ static void free_card_surfaces(AppState *app) {
 }
 
 static void load_card_assets(NotifCard *c, const char *avatar_filename);
-
-static int fetch_dunst_history(NotifCard *cards, int max_cards) {
-    FILE *fp = popen("timeout 0.2s dunstctl history 2>/dev/null", "r");
-    if (!fp) return 0;
-
-    size_t size = 0;
-    size_t cap = 16384;
-    char *buf = malloc(cap);
-    if (!buf) {
-        pclose(fp);
-        return 0;
-    }
-
-    size_t bytes;
-    while ((bytes = fread(buf + size, 1, cap - size - 1, fp)) > 0) {
-        size += bytes;
-        if (size + 4096 >= cap) {
-            cap *= 2;
-            char *new_buf = realloc(buf, cap);
-            if (!new_buf) break;
-            buf = new_buf;
-        }
-    }
-    buf[size] = '\0';
-    pclose(fp);
-
-    if (size == 0) {
-        free(buf);
-        return 0;
-    }
-
-    json_error_t err;
-    json_t *root = json_loads(buf, 0, &err);
-    free(buf);
-    if (!root) return 0;
-
-    json_t *data_arr = json_object_get(root, "data");
-    if (!json_is_array(data_arr) || json_array_size(data_arr) == 0) {
-        json_decref(root);
-        return 0;
-    }
-
-    json_t *list = json_array_get(data_arr, 0);
-    if (!json_is_array(list)) {
-        json_decref(root);
-        return 0;
-    }
-
-    int64_t now_us = get_boottime_us();
-    time_t now = time(NULL);
-    struct tm now_tm;
-    localtime_r(&now, &now_tm);
-    struct tm mid_tm = now_tm;
-    mid_tm.tm_hour = 0;
-    mid_tm.tm_min = 0;
-    mid_tm.tm_sec = 0;
-    mid_tm.tm_isdst = -1;
-    time_t midnight_today = mktime(&mid_tm);
-    time_t midnight_yesterday = midnight_today - 86400;
-
-    int count = 0;
-    size_t total = json_array_size(list);
-
-    for (size_t i = 0; i < total && count < max_cards; i++) {
-        json_t *entry = json_array_get(list, i);
-        if (!json_is_object(entry)) continue;
-
-        NotifCard *c = &cards[count];
-        memset(c, 0, sizeof(NotifCard));
-
-        json_t *j_id = json_object_get(entry, "id");
-        json_t *j_app = json_object_get(entry, "appname");
-        json_t *j_sum = json_object_get(entry, "summary");
-        json_t *j_body = json_object_get(entry, "body");
-        json_t *j_time = json_object_get(entry, "timestamp");
-        json_t *j_urg = json_object_get(entry, "urgency");
-        json_t *j_icon = json_object_get(entry, "icon_path");
-
-        if (j_id && json_is_object(j_id)) {
-            json_t *val = json_object_get(j_id, "data");
-            if (json_is_integer(val)) c->id = json_integer_value(val);
-        }
-
-        if (j_app && json_is_object(j_app)) {
-            json_t *val = json_object_get(j_app, "data");
-            if (json_is_string(val)) snprintf(c->appname, sizeof(c->appname), "%s", json_string_value(val));
-        }
-        if (c->appname[0] == '\0') strcpy(c->appname, "Notificación");
-
-        if (j_sum && json_is_object(j_sum)) {
-            json_t *val = json_object_get(j_sum, "data");
-            if (json_is_string(val)) snprintf(c->summary, sizeof(c->summary), "%s", json_string_value(val));
-        }
-
-        if (j_body && json_is_object(j_body)) {
-            json_t *val = json_object_get(j_body, "data");
-            if (json_is_string(val)) snprintf(c->body, sizeof(c->body), "%s", json_string_value(val));
-        }
-
-        if (j_time && json_is_object(j_time)) {
-            json_t *val = json_object_get(j_time, "data");
-            if (json_is_integer(val)) c->timestamp_us = json_integer_value(val);
-        }
-
-        if (j_urg && json_is_object(j_urg)) {
-            json_t *val = json_object_get(j_urg, "data");
-            if (json_is_string(val)) {
-                const char *urg_str = json_string_value(val);
-                if (strcasecmp(urg_str, "CRITICAL") == 0) c->urgency = 2;
-                else if (strcasecmp(urg_str, "LOW") == 0) c->urgency = 0;
-                else c->urgency = 1;
-            }
-        }
-
-        if (j_icon && json_is_object(j_icon)) {
-            json_t *val = json_object_get(j_icon, "data");
-            if (json_is_string(val)) snprintf(c->icon_path, sizeof(c->icon_path), "%s", json_string_value(val));
-        }
-
-        json_t *j_urls = json_object_get(entry, "urls");
-        if (j_urls && json_is_object(j_urls)) {
-            json_t *val = json_object_get(j_urls, "data");
-            if (json_is_string(val)) snprintf(c->urls, sizeof(c->urls), "%s", json_string_value(val));
-        }
-
-        clean_notification_body(c->body, c->clean_body, sizeof(c->clean_body));
-
-        if (c->timestamp_us > 0 && now_us >= c->timestamp_us) {
-            c->elapsed_sec = (now_us - c->timestamp_us) / 1000000LL;
-        } else {
-            c->elapsed_sec = 0;
-        }
-
-        time_t entry_time = (now >= c->elapsed_sec) ? (now - c->elapsed_sec) : now;
-        if (entry_time >= midnight_today) {
-            c->is_today = 1;
-        } else if (entry_time >= midnight_yesterday) {
-            c->is_yesterday = 1;
-        } else {
-            c->is_older = 1;
-        }
-
-        load_card_assets(c, NULL);
-        count++;
-    }
-
-    json_decref(root);
-    return count;
-}
 
 static void load_card_assets(NotifCard *c, const char *avatar_filename) {
     if (!g_app.cfg.show_images) return;
@@ -1144,7 +1068,7 @@ static int load_persistent_history(NotifCard *cards, int max_cards) {
     get_notif_paths(NULL, 0, hist_file, sizeof(hist_file), NULL, 0);
 
     if (access(hist_file, R_OK) != 0) {
-        return fetch_dunst_history(cards, max_cards);
+        return 0;
     }
 
     char lock_path[768];
@@ -1160,13 +1084,13 @@ static int load_persistent_history(NotifCard *cards, int max_cards) {
     }
 
     if (!root) {
-        return fetch_dunst_history(cards, max_cards);
+        return 0;
     }
 
     json_t *entries = json_object_get(root, "entries");
     if (!entries || !json_is_array(entries)) {
         json_decref(root);
-        return fetch_dunst_history(cards, max_cards);
+        return 0;
     }
 
     time_t now = time(NULL);
@@ -1301,9 +1225,7 @@ static void delete_card_from_history(int id) {
     }
 
     if (id > 0) {
-        char cmd[128];
-        snprintf(cmd, sizeof(cmd), "timeout 0.2s dunstctl history-rm %d >/dev/null 2>&1 &", id);
-        system(cmd);
+        send_dbus_close_notification(id);
     }
 }
 
@@ -1355,7 +1277,7 @@ static void clear_all_history_file(void) {
         closedir(d);
     }
 
-    system("timeout 0.2s dunstctl history-clear >/dev/null 2>&1 & timeout 0.2s dunstctl close-all >/dev/null 2>&1 &");
+    send_dbus_close_all();
 }
 
 static void format_time_ago(int64_t elapsed_sec, char *out, size_t out_len) {
@@ -2082,130 +2004,9 @@ static void on_motion(AppState *app, int mx, int my) {
     }
 }
 
-static int find_dunst_id(const NotifCard *c) {
-    if (!c) return -1;
-
-    FILE *fp = popen("dunstctl history 2>/dev/null", "r");
-    if (!fp) return -1;
-
-    size_t size = 0;
-    size_t cap = 32768;
-    char *buf = malloc(cap);
-    if (!buf) {
-        pclose(fp);
-        return -1;
-    }
-
-    size_t bytes;
-    while ((bytes = fread(buf + size, 1, cap - size - 1, fp)) > 0) {
-        size += bytes;
-        if (size + 4096 >= cap) {
-            cap *= 2;
-            char *new_buf = realloc(buf, cap);
-            if (!new_buf) break;
-            buf = new_buf;
-        }
-    }
-    buf[size] = '\0';
-    pclose(fp);
-
-    if (size == 0) {
-        free(buf);
-        return -1;
-    }
-
-    json_error_t err;
-    json_t *root = json_loads(buf, 0, &err);
-    free(buf);
-    if (!root) return -1;
-
-    json_t *data_arr = json_object_get(root, "data");
-    if (!json_is_array(data_arr) || json_array_size(data_arr) == 0) {
-        json_decref(root);
-        return -1;
-    }
-
-    json_t *list = json_array_get(data_arr, 0);
-    if (!json_is_array(list)) {
-        json_decref(root);
-        return -1;
-    }
-
-    int matched_id = -1;
-    int fallback_match_id = -1;
-    size_t total = json_array_size(list);
-
-    for (size_t i = 0; i < total; i++) {
-        json_t *entry = json_array_get(list, i);
-        if (!json_is_object(entry)) continue;
-
-        int cur_id = -1;
-        const char *cur_app = "";
-        const char *cur_sum = "";
-        const char *cur_bod = "";
-
-        json_t *j_id = json_object_get(entry, "id");
-        if (j_id && json_is_object(j_id)) {
-            json_t *v = json_object_get(j_id, "data");
-            if (json_is_integer(v)) cur_id = (int)json_integer_value(v);
-        }
-
-        json_t *j_app = json_object_get(entry, "appname");
-        if (j_app && json_is_object(j_app)) {
-            json_t *v = json_object_get(j_app, "data");
-            if (json_is_string(v)) cur_app = json_string_value(v);
-        }
-
-        json_t *j_sum = json_object_get(entry, "summary");
-        if (j_sum && json_is_object(j_sum)) {
-            json_t *v = json_object_get(j_sum, "data");
-            if (json_is_string(v)) cur_sum = json_string_value(v);
-        }
-
-        json_t *j_bod = json_object_get(entry, "body");
-        if (j_bod && json_is_object(j_bod)) {
-            json_t *v = json_object_get(j_bod, "data");
-            if (json_is_string(v)) cur_bod = json_string_value(v);
-        }
-
-        /* 1. Exact ID match if card already has a valid Dunst ID */
-        if (c->id > 0 && cur_id == c->id) {
-            matched_id = cur_id;
-            break;
-        }
-
-        /* 2. Content match (for older entries or daemon id mismatches) */
-        if (fallback_match_id < 0 && cur_id > 0) {
-            bool app_matches = (c->appname[0] != '\0' && strcasecmp(cur_app, c->appname) == 0);
-            if (app_matches) {
-                bool sum_matches = (c->summary[0] != '\0' && (strstr(cur_sum, c->summary) != NULL || strstr(c->summary, cur_sum) != NULL));
-                bool bod_matches = (c->body[0] != '\0' && (strstr(cur_bod, c->body) != NULL || strstr(c->body, cur_bod) != NULL));
-                if (sum_matches && bod_matches) {
-                    fallback_match_id = cur_id;
-                } else if (sum_matches || bod_matches) {
-                    if (fallback_match_id < 0) fallback_match_id = cur_id;
-                }
-            }
-        }
-    }
-
-    json_decref(root);
-    return (matched_id > 0) ? matched_id : fallback_match_id;
-}
-
 static void relaunch_card(const NotifCard *c) {
     if (!c) return;
 
-    /* 1. If notification is in Dunst history, pop it directly from Dunst */
-    int dunst_id = find_dunst_id(c);
-    if (dunst_id > 0) {
-        char cmd[256];
-        snprintf(cmd, sizeof(cmd), "dunstctl history-pop %d &", dunst_id);
-        system(cmd);
-        return;
-    }
-
-    /* 2. Fallback if no longer in Dunst memory: invoke notify-send with real avatar */
     const char *app = (c->appname[0] != '\0') ? c->appname : "notif_center";
     const char *sum = (c->summary[0] != '\0') ? c->summary : "Notificación";
     const char *body = (c->clean_body[0] != '\0') ? c->clean_body : c->body;
@@ -2260,57 +2061,8 @@ static void relaunch_card(const NotifCard *c) {
 static void activate_card(const NotifCard *c) {
     if (!c) return;
 
-    /* 1. Try to invoke default action via Dunst if notification is in Dunst history */
-    int dunst_id = find_dunst_id(c);
-    if (dunst_id > 0) {
-        char cmd[256];
-        snprintf(cmd, sizeof(cmd), "dunstctl history-pop %d && sleep 0.05 && dunstctl action 0 && dunstctl close %d &", dunst_id, dunst_id);
-        system(cmd);
-    }
-
-    const char *app = (c->appname[0] != '\0') ? c->appname : "";
-
-    /* 2. Try focusing the application window via i3wm */
-    char focus_cmd[1024] = {0};
-    if (strcasecmp(app, "vesktop") == 0 || strcasecmp(app, "discord") == 0) {
-        snprintf(focus_cmd, sizeof(focus_cmd), "i3-msg '[class=\"(?i)vesktop|discord\"] focus' >/dev/null 2>&1");
-    } else if (strcasecmp(app, "spotify") == 0) {
-        snprintf(focus_cmd, sizeof(focus_cmd), "i3-msg '[class=\"(?i)spotify\"] focus' >/dev/null 2>&1");
-    } else if (strncasecmp(app, "telegram", 8) == 0) {
-        snprintf(focus_cmd, sizeof(focus_cmd), "i3-msg '[class=\"(?i)telegram\"] focus' >/dev/null 2>&1");
-    } else if (strcasecmp(app, "firefox") == 0) {
-        snprintf(focus_cmd, sizeof(focus_cmd), "i3-msg '[class=\"(?i)firefox\"] focus' >/dev/null 2>&1");
-    } else if (strcasecmp(app, "chrome") == 0 || strcasecmp(app, "google-chrome") == 0 || strcasecmp(app, "chromium") == 0) {
-        snprintf(focus_cmd, sizeof(focus_cmd), "i3-msg '[class=\"(?i)chrome|chromium\"] focus' >/dev/null 2>&1");
-    } else if (strcasecmp(app, "code") == 0 || strcasecmp(app, "vscodium") == 0) {
-        snprintf(focus_cmd, sizeof(focus_cmd), "i3-msg '[class=\"(?i)code|vscodium\"] focus' >/dev/null 2>&1");
-    } else if (strcasecmp(app, "steam") == 0) {
-        snprintf(focus_cmd, sizeof(focus_cmd), "i3-msg '[class=\"(?i)steam\"] focus' >/dev/null 2>&1");
-    } else if (strcasecmp(app, "thunar") == 0 || strcasecmp(app, "pcmanfm") == 0) {
-        snprintf(focus_cmd, sizeof(focus_cmd), "i3-msg '[class=\"(?i)thunar|pcmanfm\"] focus' >/dev/null 2>&1");
-    } else if (app[0] != '\0' && strcasecmp(app, "notificación") != 0 && strcasecmp(app, "notify-send") != 0) {
-        snprintf(focus_cmd, sizeof(focus_cmd),
-                 "i3-msg '[class=\"(?i)%s\"] focus' >/dev/null 2>&1 || i3-msg '[instance=\"(?i)%s\"] focus' >/dev/null 2>&1 || i3-msg '[title=\"(?i)%s\"] focus' >/dev/null 2>&1",
-                 app, app, app);
-    }
-
-    int focused = -1;
-    if (focus_cmd[0] != '\0') {
-        focused = system(focus_cmd);
-    }
-
-    /* 3. If window was not focused and not in Dunst history, check for URL or launch the application */
-    if (focused != 0 && dunst_id <= 0) {
-        if (c->urls[0] != '\0' && strstr(c->urls, "discordapp.net") == NULL) {
-            char open_cmd[1024];
-            snprintf(open_cmd, sizeof(open_cmd), "xdg-open '%s' >/dev/null 2>&1 &", c->urls);
-            system(open_cmd);
-        } else if (app[0] != '\0' && strcasecmp(app, "notificación") != 0 && strcasecmp(app, "notify-send") != 0) {
-            char launch_cmd[1024];
-            snprintf(launch_cmd, sizeof(launch_cmd), "gtk-launch '%s' >/dev/null 2>&1 || %s >/dev/null 2>&1 &", app, app);
-            system(launch_cmd);
-        }
-    }
+    /* Invoke action via notif_daemon (central daemon handles IPC navigation, window focus, and fallbacks generically) */
+    send_dbus_invoke_action(c->id, "default");
 }
 
 static void on_button_press(AppState *app, int button, int mx, int my) {
@@ -2358,9 +2110,8 @@ static void on_button_press(AppState *app, int button, int mx, int my) {
     /* DND Button */
     if (mx >= app->dnd_btn_x && mx <= app->dnd_btn_x + app->dnd_btn_w &&
         my >= app->dnd_btn_y && my <= app->dnd_btn_y + app->dnd_btn_h) {
-        app->is_dnd = !app->is_dnd;
+        app->is_dnd = send_dbus_toggle_dnd();
         trigger_redraw(app);
-        system("timeout 0.2s dunstctl set-paused toggle >/dev/null 2>&1 &");
         return;
     }
 
@@ -2409,9 +2160,8 @@ static void on_button_press(AppState *app, int button, int mx, int my) {
                     app->running = false;
                     system("$HOME/.local/bin/network_dmenu >/dev/null 2>&1 &");
                 } else if (k == 1) {
-                    app->is_dnd = !app->is_dnd;
+                    app->is_dnd = send_dbus_toggle_dnd();
                     trigger_redraw(app);
-                    system("timeout 0.2s dunstctl set-paused toggle >/dev/null 2>&1 &");
                 } else if (k == 2) {
                     system("$HOME/.local/bin/sys_control.sh mute >/dev/null 2>&1 &");
                 }
@@ -2662,16 +2412,7 @@ static void reload_theme_and_config(AppState *app) {
     }
 
     init_pango_cache(app);
-
-    FILE *fp = popen("dunstctl is-paused 2>/dev/null", "r");
-    if (fp) {
-        char buf[16];
-        if (fgets(buf, sizeof(buf), fp)) {
-            app->is_dnd = (strncmp(buf, "true", 4) == 0);
-        }
-        pclose(fp);
-    }
-
+    app->is_dnd = check_dnd_status();
     trigger_redraw(app);
 }
 
@@ -2757,21 +2498,19 @@ static const char *detect_bar_style(void) {
     FILE *f = fopen(path, "r");
     if (f) {
         char line[256];
-        char bar_type[64] = {0};
-        char bar_mode[64] = {0};
+        char bar_type[256] = {0};
+        char bar_mode[256] = {0};
         while (fgets(line, sizeof(line), f)) {
             if (strncmp(line, "type=", 5) == 0) {
                 char *p = line + 5;
                 while (*p == '"' || *p == '\'') p++;
-                strncpy(bar_type, p, sizeof(bar_type) - 1);
-                bar_type[sizeof(bar_type) - 1] = '\0';
+                snprintf(bar_type, sizeof(bar_type), "%s", p);
                 char *end = strpbrk(bar_type, "\"\';\r\n ");
                 if (end) *end = '\0';
             } else if (strncmp(line, "mode=", 5) == 0) {
                 char *p = line + 5;
                 while (*p == '"' || *p == '\'') p++;
-                strncpy(bar_mode, p, sizeof(bar_mode) - 1);
-                bar_mode[sizeof(bar_mode) - 1] = '\0';
+                snprintf(bar_mode, sizeof(bar_mode), "%s", p);
                 char *end = strpbrk(bar_mode, "\"\';\r\n ");
                 if (end) *end = '\0';
             }
@@ -2789,17 +2528,7 @@ static const char *detect_bar_style(void) {
 }
 
 static int print_status_cli(const char *forced_style) {
-    bool is_dnd = false;
-    FILE *fp = popen("timeout 0.2s dunstctl is-paused 2>/dev/null", "r");
-    if (fp) {
-        char buf[16];
-        if (fgets(buf, sizeof(buf), fp)) {
-            if (strncmp(buf, "true", 4) == 0) {
-                is_dnd = true;
-            }
-        }
-        pclose(fp);
-    }
+    bool is_dnd = check_dnd_status();
 
     int count = 0;
     char hist_file[512];
@@ -2810,14 +2539,6 @@ static int print_status_cli(const char *forced_style) {
         json_t *entries = json_object_get(root, "entries");
         count = (entries && json_is_array(entries)) ? (int)json_array_size(entries) : 0;
         json_decref(root);
-    } else {
-        fp = popen("timeout 0.2s dunstctl count history 2>/dev/null", "r");
-        if (fp) {
-            if (fscanf(fp, "%d", &count) != 1) {
-                count = 0;
-            }
-            pclose(fp);
-        }
     }
 
     const char *icon = is_dnd ? "\xef\x87\xb6" : "\xef\x83\xb3"; /*  (bell-slash) or  (bell) */
@@ -2885,7 +2606,20 @@ static int print_status_cli(const char *forced_style) {
 
 int main(int argc, char *argv[]) {
     if (argc > 1) {
-        if (strcmp(argv[1], "--status") == 0 || strcmp(argv[1], "-s") == 0) {
+        if (strcmp(argv[1], "--toggle-dnd") == 0) {
+            bool dnd = send_dbus_toggle_dnd();
+            printf("[OK] DND alternado: %s\n", dnd ? "activo" : "inactivo");
+            return 0;
+        } else if (strcmp(argv[1], "--get-dnd") == 0) {
+            printf("%s\n", check_dnd_status() ? "true" : "false");
+            return 0;
+        } else if (strcmp(argv[1], "--clear-all") == 0) {
+            clear_all_history_file();
+            return 0;
+        } else if (strcmp(argv[1], "--close-all") == 0) {
+            send_dbus_close_all();
+            return 0;
+        } else if (strcmp(argv[1], "--status") == 0 || strcmp(argv[1], "-s") == 0) {
             const char *style = NULL;
             for (int i = 2; i < argc; i++) {
                 if (strcmp(argv[i], "--style") == 0 && i + 1 < argc) {
@@ -3062,7 +2796,7 @@ int main(int argc, char *argv[]) {
     init_pango_cache(&g_app);
 
     /* Pre-load and render all notification cards to buffer before mapping */
-    g_app.is_dnd = check_dunst_paused();
+    g_app.is_dnd = check_dnd_status();
     reload_notifications(&g_app);
     render_panel(&g_app);
 
@@ -3078,7 +2812,7 @@ int main(int argc, char *argv[]) {
     XMapRaised(g_app.dpy, g_app.win);
     XSetInputFocus(g_app.dpy, g_app.win, RevertToParent, CurrentTime);
 
-    system("dunstctl close-all >/dev/null 2>&1 &");
+    send_dbus_close_all();
 
     struct pollfd pfds[3];
     pfds[0].fd = ConnectionNumber(g_app.dpy);
@@ -3235,7 +2969,7 @@ int main(int argc, char *argv[]) {
             }
         } else if (pret == 0) {
             /* Periodic check: verify if DND status changed */
-            bool dnd = check_dunst_paused();
+            bool dnd = check_dnd_status();
             if (dnd != g_app.is_dnd) {
                 g_app.is_dnd = dnd;
                 trigger_redraw(&g_app);

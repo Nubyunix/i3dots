@@ -116,7 +116,6 @@ while true; do
 
         if [ -n "$key" ]; then
             echo -n "$key" | xclip -selection clipboard 2>/dev/null || true
-            dunstify -i input-keyboard -t 3000 "Atajo Copiado" "$key\n$desc" 2>/dev/null || \
             notify-send -i input-keyboard -t 3000 "Atajo Copiado" "$key - $desc" 2>/dev/null || true
             exit 0
         fi
