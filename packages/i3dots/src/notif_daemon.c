@@ -1401,12 +1401,10 @@ static void render_normal_toast(cairo_t *cr, ActiveToast *t) {
 
     if (t->close_hovered) {
         cairo_save(cr);
-        draw_rounded_rectangle(cr, t->close_x, t->close_y, t->close_w, t->close_h, 4.0);
-        cairo_set_source_rgba(cr, g_theme.alert.r, g_theme.alert.g, g_theme.alert.b, 0.25);
-        cairo_fill_preserve(cr);
-        cairo_set_source_rgba(cr, g_theme.alert.r, g_theme.alert.g, g_theme.alert.b, 0.7);
-        cairo_set_line_width(cr, 1.0);
-        cairo_stroke(cr);
+        double btn_rad = (g_theme.toast_radius > 0) ? (double)g_theme.toast_radius : 0.0;
+        draw_rounded_rectangle(cr, t->close_x, t->close_y, t->close_w, t->close_h, btn_rad);
+        cairo_set_source_rgba(cr, g_theme.alert.r, g_theme.alert.g, g_theme.alert.b, 0.35);
+        cairo_fill(cr);
         cairo_restore(cr);
     }
 
@@ -1434,7 +1432,8 @@ static void render_normal_toast(cairo_t *cr, ActiveToast *t) {
     pango_layout_set_width(layout, text_max_w * PANGO_SCALE);
     pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
     pango_layout_set_text(layout, t->appname[0] ? t->appname : "Notificación", -1);
-    cairo_set_source_rgba(cr, g_theme.fg_muted.r, g_theme.fg_muted.g, g_theme.fg_muted.b, 0.85);
+    ColorRGBA app_col = (t->urgency == 2) ? g_theme.alert : g_theme.accent;
+    cairo_set_source_rgba(cr, app_col.r, app_col.g, app_col.b, 0.95);
     cairo_move_to(cr, text_x, cur_y);
     pango_cairo_show_layout(cr, layout);
     int app_h = 0;

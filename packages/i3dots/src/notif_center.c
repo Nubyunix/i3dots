@@ -1831,12 +1831,12 @@ static void render_panel(AppState *app) {
         app->thumb_y = thumb_y;
 
         /* Track: Matugen th->surface */
-        cairo_rounded_rect(cr, sb_x, track_y, sb_w, track_h, sb_w / 2.0);
+        cairo_rectangle(cr, sb_x, track_y, sb_w, track_h);
         cairo_set_source_rgba(cr, th->surface.r, th->surface.g, th->surface.b, 0.45);
         cairo_fill(cr);
 
         /* Thumb: Matugen th->accent */
-        cairo_rounded_rect(cr, sb_x, thumb_y, sb_w, thumb_h, sb_w / 2.0);
+        cairo_rectangle(cr, sb_x, thumb_y, sb_w, thumb_h);
         if (app->scrollbar_dragging || app->scrollbar_hovered) {
             cairo_set_source_rgba(cr, th->accent.r, th->accent.g, th->accent.b, 1.0);
         } else {
