@@ -199,9 +199,13 @@ static void load_theme_and_config(ThemeConfig *th) {
         fclose(f);
     }
 
-    /* 2. Read notif_center config.ini overrides */
-    snprintf(path, sizeof(path), "%s/.config/notif_center/config.ini", home);
+    /* 2. Read notif_daemon config.ini overrides (with fallback to notif_center) */
+    snprintf(path, sizeof(path), "%s/.config/notif_daemon/config.ini", home);
     f = fopen(path, "r");
+    if (!f) {
+        snprintf(path, sizeof(path), "%s/.config/notif_center/config.ini", home);
+        f = fopen(path, "r");
+    }
     if (f) {
         char line[512];
         char cur_sec[64] = {0};
@@ -2889,6 +2893,8 @@ int main(int argc, char *argv[]) {
         if (!home) home = "/home/dereck";
         char dir_path[512];
         snprintf(dir_path, sizeof(dir_path), "%s/.config/polybar", home);
+        inotify_add_watch(inotify_fd, dir_path, IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_MODIFY);
+        snprintf(dir_path, sizeof(dir_path), "%s/.config/notif_daemon", home);
         inotify_add_watch(inotify_fd, dir_path, IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_MODIFY);
         snprintf(dir_path, sizeof(dir_path), "%s/.config/notif_center", home);
         inotify_add_watch(inotify_fd, dir_path, IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_MODIFY);

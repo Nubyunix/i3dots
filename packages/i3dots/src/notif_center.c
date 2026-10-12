@@ -348,10 +348,22 @@ static void load_config(AppConfig *cfg) {
     if (!f) return;
 
     char line[512];
+    char cur_sec[64] = {0};
     while (fgets(line, sizeof(line), f)) {
         char *p = line;
         while (isspace((unsigned char)*p)) p++;
-        if (*p == '#' || *p == ';' || *p == '[' || *p == '\0') continue;
+        if (*p == '#' || *p == ';' || *p == '\0') continue;
+        if (*p == '[') {
+            char *end = strchr(p, ']');
+            if (end) {
+                size_t slen = end - (p + 1);
+                if (slen < sizeof(cur_sec)) {
+                    strncpy(cur_sec, p + 1, slen);
+                    cur_sec[slen] = '\0';
+                }
+            }
+            continue;
+        }
 
         char *eq = strchr(p, '=');
         if (!eq) continue;
@@ -367,31 +379,35 @@ static void load_config(AppConfig *cfg) {
         char *vend = v + strlen(v) - 1;
         while (vend >= v && (*vend == '\n' || *vend == '\r' || isspace((unsigned char)*vend))) *vend-- = '\0';
 
-        if (strcmp(k, "width") == 0) cfg->panel_w = atoi(v);
-        else if (strcmp(k, "margin_right") == 0) cfg->margin_right = atoi(v);
-        else if (strcmp(k, "margin_gap") == 0) cfg->margin_gap = atoi(v);
-        else if (strcmp(k, "margin_top") == 0) cfg->margin_top = atoi(v);
-        else if (strcmp(k, "margin_bottom") == 0) cfg->margin_bottom = atoi(v);
-        else if (strcmp(k, "auto_adjust_bar") == 0) {
-            cfg->auto_adjust_bar = (strcasecmp(v, "true") == 0 || strcmp(v, "1") == 0);
+        if (strcasecmp(cur_sec, "geometry") == 0) {
+            if (strcmp(k, "width") == 0) cfg->panel_w = atoi(v);
+            else if (strcmp(k, "margin_right") == 0) cfg->margin_right = atoi(v);
+            else if (strcmp(k, "margin_gap") == 0) cfg->margin_gap = atoi(v);
+            else if (strcmp(k, "margin_top") == 0) cfg->margin_top = atoi(v);
+            else if (strcmp(k, "margin_bottom") == 0) cfg->margin_bottom = atoi(v);
+            else if (strcmp(k, "auto_adjust_bar") == 0) {
+                cfg->auto_adjust_bar = (strcasecmp(v, "true") == 0 || strcmp(v, "1") == 0);
+            }
+        } else if (strcasecmp(cur_sec, "appearance") == 0) {
+            if (strcmp(k, "panel_radius") == 0) cfg->panel_radius = atof(v);
+            else if (strcmp(k, "card_radius") == 0) cfg->card_radius = atof(v);
+            else if (strcmp(k, "button_radius") == 0) cfg->button_radius = atof(v);
+            else if (strcmp(k, "border_width") == 0) cfg->border_width = atoi(v);
+            else if (strcmp(k, "icon_position") == 0) snprintf(cfg->icon_position, sizeof(cfg->icon_position), "%s", v);
+            else if (strcmp(k, "show_images") == 0) {
+                cfg->show_images = (strcasecmp(v, "true") == 0 || strcmp(v, "1") == 0);
+            }
+            else if (strcmp(k, "image_size") == 0) cfg->image_size = atoi(v);
+            else if (strcmp(k, "font_title") == 0) snprintf(cfg->font_title, sizeof(cfg->font_title), "%s", v);
+            else if (strcmp(k, "font_bold") == 0) snprintf(cfg->font_bold, sizeof(cfg->font_bold), "%s", v);
+            else if (strcmp(k, "font_normal") == 0) snprintf(cfg->font_normal, sizeof(cfg->font_normal), "%s", v);
+            else if (strcmp(k, "font_small") == 0) snprintf(cfg->font_small, sizeof(cfg->font_small), "%s", v);
+        } else if (strcasecmp(cur_sec, "history") == 0) {
+            if (strcmp(k, "max_entries") == 0 || strcmp(k, "max_history") == 0) {
+                int val = atoi(v);
+                if (val >= 50 && val <= 1024) cfg->max_entries = val;
+            }
         }
-        else if (strcmp(k, "panel_radius") == 0) cfg->panel_radius = atof(v);
-        else if (strcmp(k, "card_radius") == 0) cfg->card_radius = atof(v);
-        else if (strcmp(k, "button_radius") == 0) cfg->button_radius = atof(v);
-        else if (strcmp(k, "border_width") == 0) cfg->border_width = atoi(v);
-        else if (strcmp(k, "icon_position") == 0) snprintf(cfg->icon_position, sizeof(cfg->icon_position), "%s", v);
-        else if (strcmp(k, "show_images") == 0) {
-            cfg->show_images = (strcasecmp(v, "true") == 0 || strcmp(v, "1") == 0);
-        }
-        else if (strcmp(k, "image_size") == 0) cfg->image_size = atoi(v);
-        else if (strcmp(k, "max_entries") == 0 || strcmp(k, "max_history") == 0) {
-            int val = atoi(v);
-            if (val >= 50 && val <= 1024) cfg->max_entries = val;
-        }
-        else if (strcmp(k, "font_title") == 0) snprintf(cfg->font_title, sizeof(cfg->font_title), "%s", v);
-        else if (strcmp(k, "font_bold") == 0) snprintf(cfg->font_bold, sizeof(cfg->font_bold), "%s", v);
-        else if (strcmp(k, "font_normal") == 0) snprintf(cfg->font_normal, sizeof(cfg->font_normal), "%s", v);
-        else if (strcmp(k, "font_small") == 0) snprintf(cfg->font_small, sizeof(cfg->font_small), "%s", v);
     }
     fclose(f);
 }
