@@ -178,7 +178,6 @@ typedef struct {
     double button_radius;
     int border_width;
     char icon_position[16];
-    bool show_quick_actions;
     bool show_images;
     int image_size;
     int max_entries;
@@ -237,8 +236,6 @@ typedef struct {
     PangoLayout *layout_meta;
     PangoLayout *layout_tab;
     PangoLayout *layout_btn;
-    PangoLayout *layout_tile_t;
-    PangoLayout *layout_tile_s;
     PangoLayout *layout_foot;
     PangoLayout *layout_empty;
 } PangoCache;
@@ -278,14 +275,11 @@ typedef struct {
     int clear_btn_x, clear_btn_y, clear_btn_w, clear_btn_h;
     bool clear_btn_hovered;
 
+    int wifi_btn_x, wifi_btn_y, wifi_btn_w, wifi_btn_h;
+    bool wifi_btn_hovered;
+
     int filter_rects[FILTER_COUNT][4]; /* x, y, w, h */
     int filter_hovered;
-
-    /* Quick tiles at bottom */
-    int tiles_area_y;
-    int tiles_area_h;
-    int tile_rects[3][4]; /* x, y, w, h */
-    int tile_hovered;
 
     /* Vertical scrollbar */
     bool scrollbar_visible;
@@ -338,7 +332,6 @@ static void load_config(AppConfig *cfg) {
     cfg->button_radius = 0.0;
     cfg->border_width = 1;
     strcpy(cfg->icon_position, "left");
-    cfg->show_quick_actions = false;
     cfg->show_images = true;
     cfg->image_size = 48;
     cfg->max_entries = 500;
@@ -387,9 +380,6 @@ static void load_config(AppConfig *cfg) {
         else if (strcmp(k, "button_radius") == 0) cfg->button_radius = atof(v);
         else if (strcmp(k, "border_width") == 0) cfg->border_width = atoi(v);
         else if (strcmp(k, "icon_position") == 0) snprintf(cfg->icon_position, sizeof(cfg->icon_position), "%s", v);
-        else if (strcmp(k, "show_quick_actions") == 0) {
-            cfg->show_quick_actions = (strcasecmp(v, "true") == 0 || strcmp(v, "1") == 0);
-        }
         else if (strcmp(k, "show_images") == 0) {
             cfg->show_images = (strcasecmp(v, "true") == 0 || strcmp(v, "1") == 0);
         }
@@ -913,12 +903,6 @@ static void init_pango_cache(AppState *app) {
     p->layout_btn = pango_cairo_create_layout(app->cr);
     pango_layout_set_font_description(p->layout_btn, p->f_bold9);
 
-    p->layout_tile_t = pango_cairo_create_layout(app->cr);
-    pango_layout_set_font_description(p->layout_tile_t, p->f_bold9);
-
-    p->layout_tile_s = pango_cairo_create_layout(app->cr);
-    pango_layout_set_font_description(p->layout_tile_s, p->f_norm8);
-
     p->layout_foot = pango_cairo_create_layout(app->cr);
     pango_layout_set_font_description(p->layout_foot, p->f_norm8);
 
@@ -933,8 +917,6 @@ static void destroy_pango_cache(AppState *app) {
     g_object_unref(p->layout_meta);
     g_object_unref(p->layout_tab);
     g_object_unref(p->layout_btn);
-    g_object_unref(p->layout_tile_t);
-    g_object_unref(p->layout_tile_s);
     g_object_unref(p->layout_foot);
     g_object_unref(p->layout_empty);
 
@@ -1392,17 +1374,7 @@ static void layout_cards(AppState *app) {
         current_y += total_h + CARD_SPACING;
     }
 
-    int list_view_h;
-    if (app->cfg.show_quick_actions) {
-        app->tiles_area_h = 52;
-        app->tiles_area_y = app->panel_h - app->tiles_area_h - 16;
-        list_view_h = app->tiles_area_y - start_y - 10;
-    } else {
-        app->tiles_area_h = 0;
-        app->tiles_area_y = app->panel_h;
-        list_view_h = app->panel_h - start_y - 14;
-    }
-
+    int list_view_h = app->panel_h - start_y - 14;
     int content_total_h = (current_y + app->scroll_offset) - start_y;
     app->max_scroll = content_total_h > list_view_h ? (content_total_h - list_view_h) : 0;
     if (app->scroll_offset > app->max_scroll) app->scroll_offset = app->max_scroll;
@@ -1543,6 +1515,30 @@ static void render_panel(AppState *app) {
     }
     draw_centered_icon(cr, p->layout_btn, "\xef\x87\xb6", app->dnd_btn_x, app->dnd_btn_y, app->dnd_btn_w, app->dnd_btn_h);
 
+    /* WiFi Button (Wifi icon) - Square 28x28 button */
+    app->wifi_btn_w = 28;
+    app->wifi_btn_h = 28;
+    app->wifi_btn_x = app->dnd_btn_x - app->wifi_btn_w - 8;
+    app->wifi_btn_y = 16;
+
+    cairo_rounded_rect(cr, app->wifi_btn_x, app->wifi_btn_y, app->wifi_btn_w, app->wifi_btn_h, app->cfg.button_radius);
+    if (app->wifi_btn_hovered) {
+        cairo_set_source_rgba(cr, th->accent.r, th->accent.g, th->accent.b, 0.25);
+        cairo_fill_preserve(cr);
+        cairo_set_source_rgba(cr, th->accent.r, th->accent.g, th->accent.b, 0.8);
+        cairo_set_line_width(cr, 1.0);
+        cairo_stroke(cr);
+        cairo_set_source_rgba(cr, th->accent.r, th->accent.g, th->accent.b, 1.0);
+    } else {
+        cairo_set_source_rgba(cr, th->surface.r, th->surface.g, th->surface.b, 0.6);
+        cairo_fill_preserve(cr);
+        cairo_set_source_rgba(cr, th->border.r, th->border.g, th->border.b, 0.6);
+        cairo_set_line_width(cr, 1.0);
+        cairo_stroke(cr);
+        cairo_set_source_rgba(cr, th->fg_muted.r, th->fg_muted.g, th->fg_muted.b, 0.9);
+    }
+    draw_centered_icon(cr, p->layout_btn, "\xef\x87\xab", app->wifi_btn_x, app->wifi_btn_y, app->wifi_btn_w, app->wifi_btn_h);
+
     /* --- 2. Filter Bar --- */
     const char *filter_labels[FILTER_COUNT] = {"Todas", "Hoy", "Ayer", "Antiguas"};
     int tab_w = (app->panel_w - 32 - 9) / 4;
@@ -1596,7 +1592,7 @@ static void render_panel(AppState *app) {
 
     /* --- 3. Notification Cards List --- */
     int list_clip_y = tab_y + tab_h + 12;
-    int list_clip_h = (app->cfg.show_quick_actions ? app->tiles_area_y : app->panel_h) - list_clip_y - 12;
+    int list_clip_h = app->panel_h - list_clip_y - 12;
 
     cairo_save(cr);
     cairo_rectangle(cr, 0, list_clip_y, app->panel_w, list_clip_h);
@@ -1835,58 +1831,6 @@ static void render_panel(AppState *app) {
         app->scrollbar_visible = false;
     }
 
-    /* --- 4. Quick Actions (Only if enabled in config) --- */
-    if (app->cfg.show_quick_actions) {
-        cairo_move_to(cr, 16, app->tiles_area_y - 6);
-        cairo_line_to(cr, app->panel_w - 16, app->tiles_area_y - 6);
-        cairo_set_source_rgba(cr, th->border.r, th->border.g, th->border.b, 0.4);
-        cairo_set_line_width(cr, 1.0);
-        cairo_stroke(cr);
-
-        const char *tile_titles[3] = {"WiFi", "No Molestar", "Silenciar"};
-        int tile_count = 3;
-        int gap = 8;
-        int tile_w = (app->panel_w - 32 - (tile_count - 1) * gap) / tile_count;
-        int tile_h = 38;
-        int tile_y = app->tiles_area_y + 4;
-
-        for (int k = 0; k < tile_count; k++) {
-            int tx = 16 + k * (tile_w + gap);
-            app->tile_rects[k][0] = tx;
-            app->tile_rects[k][1] = tile_y;
-            app->tile_rects[k][2] = tile_w;
-            app->tile_rects[k][3] = tile_h;
-
-            cairo_rounded_rect(cr, tx, tile_y, tile_w, tile_h, app->cfg.button_radius);
-            if (k == 1 && app->is_dnd) {
-                cairo_set_source_rgba(cr, th->accent.r, th->accent.g, th->accent.b, app->tile_hovered == k ? 0.35 : 0.22);
-                cairo_fill_preserve(cr);
-                cairo_set_source_rgba(cr, th->accent.r, th->accent.g, th->accent.b, 0.9);
-                cairo_set_line_width(cr, 1.0);
-                cairo_stroke(cr);
-            } else if (app->tile_hovered == k) {
-                cairo_set_source_rgba(cr, th->bg_card_hover.r, th->bg_card_hover.g, th->bg_card_hover.b, 0.9);
-                cairo_fill_preserve(cr);
-                cairo_set_source_rgba(cr, th->border.r, th->border.g, th->border.b, 0.8);
-                cairo_set_line_width(cr, 1.0);
-                cairo_stroke(cr);
-            } else {
-                cairo_set_source_rgba(cr, th->surface.r, th->surface.g, th->surface.b, 0.6);
-                cairo_fill_preserve(cr);
-                cairo_set_source_rgba(cr, th->border.r, th->border.g, th->border.b, 0.4);
-                cairo_set_line_width(cr, 1.0);
-                cairo_stroke(cr);
-            }
-
-            pango_layout_set_text(p->layout_tile_t, tile_titles[k], -1);
-            int tw, th_px;
-            pango_layout_get_pixel_size(p->layout_tile_t, &tw, &th_px);
-            cairo_move_to(cr, tx + (tile_w - tw) / 2.0, tile_y + (tile_h - th_px) / 2.0);
-            cairo_set_source_rgba(cr, th->fg_text.r, th->fg_text.g, th->fg_text.b, 0.95);
-            pango_cairo_show_layout(cr, p->layout_tile_t);
-        }
-    }
-
     /* Blit double buffer to X11 drawable */
     cairo_t *xcr = cairo_create(app->cairo_surface);
     cairo_set_source_surface(xcr, app->buffer_surface, 0, 0);
@@ -1901,10 +1845,10 @@ static void trigger_redraw(AppState *app) {
 }
 
 static void clear_hover_states(AppState *app) {
+    app->wifi_btn_hovered = false;
     app->dnd_btn_hovered = false;
     app->clear_btn_hovered = false;
     app->filter_hovered = -1;
-    app->tile_hovered = -1;
     app->scrollbar_hovered = false;
     for (int i = 0; i < app->card_count; i++) {
         app->cards[i].is_hovered = false;
@@ -1938,6 +1882,13 @@ static void on_motion(AppState *app, int mx, int my) {
         }
     }
 
+    bool wifi_hov = (mx >= app->wifi_btn_x && mx <= app->wifi_btn_x + app->wifi_btn_w &&
+                     my >= app->wifi_btn_y && my <= app->wifi_btn_y + app->wifi_btn_h);
+    if (wifi_hov != app->wifi_btn_hovered) {
+        app->wifi_btn_hovered = wifi_hov;
+        needs_redraw = true;
+    }
+
     bool dnd_hov = (mx >= app->dnd_btn_x && mx <= app->dnd_btn_x + app->dnd_btn_w &&
                     my >= app->dnd_btn_y && my <= app->dnd_btn_y + app->dnd_btn_h);
     if (dnd_hov != app->dnd_btn_hovered) {
@@ -1963,21 +1914,6 @@ static void on_motion(AppState *app, int mx, int my) {
     if (f_hov != app->filter_hovered) {
         app->filter_hovered = f_hov;
         needs_redraw = true;
-    }
-
-    if (app->cfg.show_quick_actions) {
-        int t_hov = -1;
-        for (int k = 0; k < 3; k++) {
-            if (mx >= app->tile_rects[k][0] && mx <= app->tile_rects[k][0] + app->tile_rects[k][2] &&
-                my >= app->tile_rects[k][1] && my <= app->tile_rects[k][1] + app->tile_rects[k][3]) {
-                t_hov = k;
-                break;
-            }
-        }
-        if (t_hov != app->tile_hovered) {
-            app->tile_hovered = t_hov;
-            needs_redraw = true;
-        }
     }
 
     int card_w = app->panel_w - 32;
@@ -2107,6 +2043,14 @@ static void on_button_press(AppState *app, int button, int mx, int my) {
         }
     }
 
+    /* WiFi Button */
+    if (mx >= app->wifi_btn_x && mx <= app->wifi_btn_x + app->wifi_btn_w &&
+        my >= app->wifi_btn_y && my <= app->wifi_btn_y + app->wifi_btn_h) {
+        app->running = false;
+        system("$HOME/.local/bin/network_dmenu >/dev/null 2>&1 &");
+        return;
+    }
+
     /* DND Button */
     if (mx >= app->dnd_btn_x && mx <= app->dnd_btn_x + app->dnd_btn_w &&
         my >= app->dnd_btn_y && my <= app->dnd_btn_y + app->dnd_btn_h) {
@@ -2148,25 +2092,6 @@ static void on_button_press(AppState *app, int button, int mx, int my) {
                 trigger_redraw(app);
             }
             return;
-        }
-    }
-
-    /* Quick Action Tiles */
-    if (app->cfg.show_quick_actions) {
-        for (int k = 0; k < 3; k++) {
-            if (mx >= app->tile_rects[k][0] && mx <= app->tile_rects[k][0] + app->tile_rects[k][2] &&
-                my >= app->tile_rects[k][1] && my <= app->tile_rects[k][1] + app->tile_rects[k][3]) {
-                if (k == 0) {
-                    app->running = false;
-                    system("$HOME/.local/bin/network_dmenu >/dev/null 2>&1 &");
-                } else if (k == 1) {
-                    app->is_dnd = send_dbus_toggle_dnd();
-                    trigger_redraw(app);
-                } else if (k == 2) {
-                    system("$HOME/.local/bin/sys_control.sh mute >/dev/null 2>&1 &");
-                }
-                return;
-            }
         }
     }
 
