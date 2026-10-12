@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/inotify.h>
 #include <dirent.h>
 #include <stdbool.h>
 #include <poll.h>
@@ -29,7 +30,7 @@
 
 #define DAEMON_PID_FILE "/tmp/notif_daemon.pid"
 #define DEFAULT_MAX_HISTORY 500
-#define MAX_ACTIVE_TOASTS 4
+#define MAX_ACTIVE_TOASTS 8
 #define TOAST_W 380
 #define TOAST_GAP 10
 #define DEFAULT_TIMEOUT_MS 5000
@@ -78,6 +79,22 @@ typedef struct {
     char font_bold[128];
     char font_normal[128];
     int max_entries;
+
+    /* Toast customizations */
+    int toast_w;
+    int toast_gap;
+    int toast_radius;
+    int toast_border_width;
+
+    /* OSD customizations */
+    bool osd_enabled;
+    char osd_orientation[16];
+    char osd_position[32];
+    int osd_w;
+    int osd_h;
+    int osd_margin;
+    int osd_radius;
+    int osd_border_width;
 } ThemeConfig;
 
 static ThemeConfig g_theme;
@@ -139,6 +156,20 @@ static void load_theme_and_config(ThemeConfig *th) {
     strcpy(th->font_normal, "JetBrainsMono Nerd Font 9");
     th->max_entries = DEFAULT_MAX_HISTORY;
 
+    th->toast_w = 380;
+    th->toast_gap = 10;
+    th->toast_radius = 0;
+    th->toast_border_width = 1;
+
+    th->osd_enabled = true;
+    strcpy(th->osd_orientation, "vertical");
+    strcpy(th->osd_position, "right");
+    th->osd_w = 50;
+    th->osd_h = 210;
+    th->osd_margin = 24;
+    th->osd_radius = 0;
+    th->osd_border_width = 1;
+
     const char *home = getenv("HOME");
     if (!home) home = "/home/dereck";
 
@@ -173,27 +204,76 @@ static void load_theme_and_config(ThemeConfig *th) {
     f = fopen(path, "r");
     if (f) {
         char line[512];
-        bool in_colors = false;
+        char cur_sec[64] = {0};
         while (fgets(line, sizeof(line), f)) {
             char *p = line;
             while (isspace((unsigned char)*p)) p++;
-            if (*p == '#' || *p == ';') continue;
+            if (*p == '#' || *p == ';' || *p == '\0') continue;
             if (*p == '[') {
-                in_colors = (strncasecmp(p, "[colors]", 8) == 0);
+                char *end = strchr(p, ']');
+                if (end) {
+                    size_t slen = end - (p + 1);
+                    if (slen < sizeof(cur_sec)) {
+                        strncpy(cur_sec, p + 1, slen);
+                        cur_sec[slen] = '\0';
+                    }
+                }
                 continue;
             }
-            char key[64], val[128];
+            char key[64] = {0}, val[128] = {0};
             if (sscanf(p, "%63[^= \t] = %127[^\r\n]", key, val) == 2) {
-                if (in_colors && val[0] == '#') {
+                char *vend = val + strlen(val) - 1;
+                while (vend >= val && isspace((unsigned char)*vend)) { *vend = '\0'; vend--; }
+
+                if (strcasecmp(cur_sec, "colors") == 0 && val[0] == '#') {
                     if (strcmp(key, "bg_card") == 0) th->bg_card = hex_to_color(val, 1.0);
                     else if (strcmp(key, "bg_card_hover") == 0) th->bg_card_hover = hex_to_color(val, 1.0);
                     else if (strcmp(key, "border") == 0) th->border = hex_to_color(val, 0.9);
                     else if (strcmp(key, "accent") == 0) th->accent = hex_to_color(val, 1.0);
+                    else if (strcmp(key, "alert") == 0) th->alert = hex_to_color(val, 1.0);
                     else if (strcmp(key, "fg_text") == 0) th->fg_text = hex_to_color(val, 1.0);
                     else if (strcmp(key, "fg_muted") == 0) th->fg_muted = hex_to_color(val, 1.0);
+                } else if (strcasecmp(cur_sec, "toast") == 0) {
+                    if (strcmp(key, "width") == 0 || strcmp(key, "toast_width") == 0) th->toast_w = atoi(val);
+                    else if (strcmp(key, "gap") == 0 || strcmp(key, "toast_gap") == 0) th->toast_gap = atoi(val);
+                    else if (strcmp(key, "radius") == 0 || strcmp(key, "toast_radius") == 0) th->toast_radius = atoi(val);
+                    else if (strcmp(key, "border_width") == 0 || strcmp(key, "toast_border_width") == 0) th->toast_border_width = atoi(val);
+                } else if (strcasecmp(cur_sec, "osd") == 0) {
+                    if (strcmp(key, "enabled") == 0 || strcmp(key, "osd_enabled") == 0) {
+                        th->osd_enabled = (strcasecmp(val, "true") == 0 || strcmp(val, "1") == 0);
+                    }
+                    else if (strcmp(key, "orientation") == 0 || strcmp(key, "osd_orientation") == 0) snprintf(th->osd_orientation, sizeof(th->osd_orientation), "%s", val);
+                    else if (strcmp(key, "position") == 0 || strcmp(key, "osd_position") == 0) snprintf(th->osd_position, sizeof(th->osd_position), "%s", val);
+                    else if (strcmp(key, "width") == 0 || strcmp(key, "osd_width") == 0) th->osd_w = atoi(val);
+                    else if (strcmp(key, "height") == 0 || strcmp(key, "osd_height") == 0) th->osd_h = atoi(val);
+                    else if (strcmp(key, "margin") == 0 || strcmp(key, "osd_margin") == 0) th->osd_margin = atoi(val);
+                    else if (strcmp(key, "radius") == 0 || strcmp(key, "osd_radius") == 0) th->osd_radius = atoi(val);
+                    else if (strcmp(key, "border_width") == 0 || strcmp(key, "osd_border_width") == 0) th->osd_border_width = atoi(val);
                 } else {
-                    if (strcmp(key, "card_radius") == 0) th->card_radius = atoi(val);
-                    else if (strcmp(key, "border_width") == 0) th->border_width = atoi(val);
+                    if (strcmp(key, "card_radius") == 0) {
+                        th->card_radius = atoi(val);
+                        th->toast_radius = th->card_radius;
+                        th->osd_radius = th->card_radius;
+                    }
+                    else if (strcmp(key, "border_width") == 0) {
+                        th->border_width = atoi(val);
+                        th->toast_border_width = th->border_width;
+                        th->osd_border_width = th->border_width;
+                    }
+                    else if (strcmp(key, "toast_width") == 0) th->toast_w = atoi(val);
+                    else if (strcmp(key, "toast_gap") == 0) th->toast_gap = atoi(val);
+                    else if (strcmp(key, "toast_radius") == 0) th->toast_radius = atoi(val);
+                    else if (strcmp(key, "toast_border_width") == 0) th->toast_border_width = atoi(val);
+                    else if (strcmp(key, "osd_enabled") == 0) {
+                        th->osd_enabled = (strcasecmp(val, "true") == 0 || strcmp(val, "1") == 0);
+                    }
+                    else if (strcmp(key, "osd_orientation") == 0) snprintf(th->osd_orientation, sizeof(th->osd_orientation), "%s", val);
+                    else if (strcmp(key, "osd_position") == 0) snprintf(th->osd_position, sizeof(th->osd_position), "%s", val);
+                    else if (strcmp(key, "osd_width") == 0) th->osd_w = atoi(val);
+                    else if (strcmp(key, "osd_height") == 0) th->osd_h = atoi(val);
+                    else if (strcmp(key, "osd_margin") == 0) th->osd_margin = atoi(val);
+                    else if (strcmp(key, "osd_radius") == 0) th->osd_radius = atoi(val);
+                    else if (strcmp(key, "osd_border_width") == 0) th->osd_border_width = atoi(val);
                     else if (strcmp(key, "max_entries") == 0 || strcmp(key, "max_history") == 0) {
                         int v = atoi(val);
                         if (v >= 50 && v <= 5000) th->max_entries = v;
@@ -208,6 +288,13 @@ static void load_theme_and_config(ThemeConfig *th) {
             }
         }
         fclose(f);
+    }
+
+    if (strcasecmp(th->osd_orientation, "horizontal") == 0) {
+        if (th->osd_w == 50 && th->osd_h == 210) {
+            th->osd_w = 240;
+            th->osd_h = 50;
+        }
     }
 }
 
@@ -864,7 +951,12 @@ typedef struct {
     int timeout_ms;
     int64_t show_time_ms;
     bool hovered;
+    bool close_hovered;
     bool active;
+
+    int progress_value; /* -1 if no progress bar, 0..100 if progress */
+    bool is_osd;         /* true if system OSD */
+    int osd_type;        /* 1: volume, 2: brightness, 3: mic, 0: other */
 
     Window win;
     Pixmap pixmap;
@@ -879,6 +971,9 @@ static Window g_root = 0;
 static int g_screen = 0;
 static int g_screen_w = 0;
 static int g_screen_h = 0;
+static Visual *g_visual = NULL;
+static int g_depth = 0;
+static Colormap g_colormap = 0;
 
 static int64_t get_monotonic_ms(void) {
     struct timespec ts;
@@ -887,10 +982,13 @@ static int64_t get_monotonic_ms(void) {
 }
 
 static void draw_rounded_rectangle(cairo_t *cr, double x, double y, double w, double h, double r) {
+    if (w <= 0.0 || h <= 0.0) return;
     if (r <= 0.0) {
         cairo_rectangle(cr, x, y, w, h);
         return;
     }
+    if (r > w / 2.0) r = w / 2.0;
+    if (r > h / 2.0) r = h / 2.0;
     double deg = M_PI / 180.0;
     cairo_new_sub_path(cr);
     cairo_arc(cr, x + w - r, y + r, r, -90 * deg, 0 * deg);
@@ -898,6 +996,31 @@ static void draw_rounded_rectangle(cairo_t *cr, double x, double y, double w, do
     cairo_arc(cr, x + r, y + h - r, r, 90 * deg, 180 * deg);
     cairo_arc(cr, x + r, y + r, r, 180 * deg, 270 * deg);
     cairo_close_path(cr);
+}
+
+static void draw_centered_icon(cairo_t *cr, const char *font_desc_str, const char *glyph,
+                               double rx, double ry, double rw, double rh, ColorRGBA col) {
+    if (!glyph || !*glyph) return;
+    PangoLayout *layout = pango_cairo_create_layout(cr);
+    PangoFontDescription *desc = pango_font_description_from_string(font_desc_str);
+    pango_layout_set_font_description(layout, desc);
+    pango_layout_set_text(layout, glyph, -1);
+
+    PangoRectangle ink, log;
+    pango_layout_get_pixel_extents(layout, &ink, &log);
+    double w = (ink.width > 0) ? ink.width : log.width;
+    double h = (ink.height > 0) ? ink.height : log.height;
+    double ox = (ink.width > 0) ? ink.x : log.x;
+    double oy = (ink.height > 0) ? ink.y : log.y;
+    double x = rx + (rw - w) / 2.0 - ox;
+    double y = ry + (rh - h) / 2.0 - oy;
+
+    cairo_set_source_rgba(cr, col.r, col.g, col.b, col.a);
+    cairo_move_to(cr, x, y);
+    pango_cairo_show_layout(cr, layout);
+
+    pango_font_description_free(desc);
+    g_object_unref(layout);
 }
 
 static cairo_surface_t *pixbuf_to_cairo_surface(GdkPixbuf *pixbuf) {
@@ -966,27 +1089,245 @@ static void set_pango_text_or_markup(PangoLayout *layout, const char *text) {
     }
 }
 
-static void render_toast(ActiveToast *t) {
-    if (!t->active || !t->win || !t->pixmap) return;
+static void render_osd_vertical(cairo_t *cr, ActiveToast *t) {
+    cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
+    cairo_paint(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
 
-    cairo_surface_t *surf = cairo_xlib_surface_create(g_dpy, t->pixmap,
-                                                     DefaultVisual(g_dpy, g_screen),
-                                                     t->w, t->h);
-    cairo_t *cr = cairo_create(surf);
+    double rad = (g_theme.osd_radius > 0) ? (double)g_theme.osd_radius : 0.0;
+    if (rad > t->w / 2.0) rad = t->w / 2.0;
+    double bwidth = (g_theme.osd_border_width > 0) ? (double)g_theme.osd_border_width : 1.0;
 
     /* Background */
+    draw_rounded_rectangle(cr, 0.5, 0.5, t->w - 1.0, t->h - 1.0, rad);
+    cairo_set_source_rgba(cr, g_theme.bg_card.r, g_theme.bg_card.g, g_theme.bg_card.b, 0.95);
+    cairo_fill_preserve(cr);
+    cairo_set_source_rgba(cr, g_theme.border.r, g_theme.border.g, g_theme.border.b, g_theme.border.a);
+    cairo_set_line_width(cr, bwidth);
+    cairo_stroke(cr);
+
+    int val = t->progress_value;
+    if (val < 0) val = 0;
+    if (val > 100) val = 100;
+
+    bool is_muted = false;
+    if (t->osd_type == 1) {
+        if (strcasestr(t->summary, "Silenciado") != NULL ||
+            strcasestr(t->body, "Silenciado") != NULL ||
+            val == 0) {
+            is_muted = true;
+        }
+    } else if (t->osd_type == 3) {
+        if (strcasestr(t->body, "Silenciado") != NULL || val == 0) {
+            is_muted = true;
+        }
+    }
+
+    /* 1. Icon */
+    const char *icon_glyph = "\xef\x80\xa8"; /* fa-volume-up */
+    ColorRGBA icon_col = g_theme.accent;
+
+    if (t->osd_type == 1) {
+        if (is_muted) {
+            icon_glyph = "\xef\x80\xa6"; /* fa-volume-off */
+            icon_col = g_theme.alert;
+        } else if (val < 33) {
+            icon_glyph = "\xef\x80\xa7"; /* fa-volume-down */
+            icon_col = g_theme.accent;
+        } else if (val < 66) {
+            icon_glyph = "\xef\x80\xa7";
+            icon_col = g_theme.accent;
+        } else {
+            icon_glyph = "\xef\x80\xa8"; /* fa-volume-up */
+            icon_col = g_theme.accent;
+        }
+    } else if (t->osd_type == 2) {
+        icon_glyph = "\xef\x84\x8b"; /* fa-sun-o */
+        icon_col = g_theme.accent;
+    } else if (t->osd_type == 3) {
+        if (is_muted) {
+            icon_glyph = "\xef\x84\xb1"; /* fa-microphone-slash */
+            icon_col = g_theme.alert;
+        } else {
+            icon_glyph = "\xef\x84\xb0"; /* fa-microphone */
+            icon_col = g_theme.accent;
+        }
+    }
+
+    draw_centered_icon(cr, g_theme.font_bold, icon_glyph, (t->w - 24) / 2.0, 12, 24, 24, icon_col);
+
+    /* 2. Vertical Slider Track */
+    int track_w = 16;
+    int tx = (t->w - track_w) / 2;
+    int track_y = 44;
+    int track_h = t->h - 44 - 36;
+    double track_rad = (rad > 0.0) ? (track_w / 2.0) : 0.0;
+
+    /* Track background */
+    draw_rounded_rectangle(cr, tx, track_y, track_w, track_h, track_rad);
+    cairo_set_source_rgba(cr, g_theme.bg_card_hover.r, g_theme.bg_card_hover.g, g_theme.bg_card_hover.b, 0.75);
+    cairo_fill_preserve(cr);
+    cairo_set_source_rgba(cr, g_theme.border.r, g_theme.border.g, g_theme.border.b, 0.4);
+    cairo_set_line_width(cr, 1.0);
+    cairo_stroke(cr);
+
+    /* Fill from bottom up */
+    int fill_h = (int)((double)track_h * val / 100.0);
+    if (fill_h > 0) {
+        int fy = track_y + track_h - fill_h;
+        cairo_save(cr);
+        draw_rounded_rectangle(cr, tx, track_y, track_w, track_h, track_rad);
+        cairo_clip(cr);
+        cairo_rectangle(cr, tx, fy, track_w, fill_h);
+        ColorRGBA fill_col = is_muted ? g_theme.alert : g_theme.accent;
+        cairo_set_source_rgba(cr, fill_col.r, fill_col.g, fill_col.b, 1.0);
+        cairo_fill(cr);
+        cairo_restore(cr);
+    }
+
+    /* 3. Bottom Percentage / Label */
+    char pct_str[16];
+    if (is_muted) {
+        snprintf(pct_str, sizeof(pct_str), "MUT");
+    } else {
+        snprintf(pct_str, sizeof(pct_str), "%d%%", val);
+    }
+    ColorRGBA text_col = is_muted ? g_theme.alert : g_theme.fg_text;
+    draw_centered_icon(cr, g_theme.font_small, pct_str, 2, track_y + track_h + 6, t->w - 4, 20, text_col);
+}
+
+static void render_osd_horizontal(cairo_t *cr, ActiveToast *t) {
+    cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
+    cairo_paint(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+
+    double rad = (g_theme.osd_radius > 0) ? (double)g_theme.osd_radius : 0.0;
+    if (rad > t->h / 2.0) rad = t->h / 2.0;
+    double bwidth = (g_theme.osd_border_width > 0) ? (double)g_theme.osd_border_width : 1.0;
+
+    /* Background */
+    draw_rounded_rectangle(cr, 0.5, 0.5, t->w - 1.0, t->h - 1.0, rad);
+    cairo_set_source_rgba(cr, g_theme.bg_card.r, g_theme.bg_card.g, g_theme.bg_card.b, 0.95);
+    cairo_fill_preserve(cr);
+    cairo_set_source_rgba(cr, g_theme.border.r, g_theme.border.g, g_theme.border.b, g_theme.border.a);
+    cairo_set_line_width(cr, bwidth);
+    cairo_stroke(cr);
+
+    int val = t->progress_value;
+    if (val < 0) val = 0;
+    if (val > 100) val = 100;
+
+    bool is_muted = false;
+    if (t->osd_type == 1) {
+        if (strcasestr(t->summary, "Silenciado") != NULL ||
+            strcasestr(t->body, "Silenciado") != NULL ||
+            val == 0) {
+            is_muted = true;
+        }
+    } else if (t->osd_type == 3) {
+        if (strcasestr(t->body, "Silenciado") != NULL || val == 0) {
+            is_muted = true;
+        }
+    }
+
+    /* 1. Icon */
+    const char *icon_glyph = "\xef\x80\xa8";
+    ColorRGBA icon_col = g_theme.accent;
+
+    if (t->osd_type == 1) {
+        if (is_muted) {
+            icon_glyph = "\xef\x80\xa6";
+            icon_col = g_theme.alert;
+        } else if (val < 50) {
+            icon_glyph = "\xef\x80\xa7";
+            icon_col = g_theme.accent;
+        } else {
+            icon_glyph = "\xef\x80\xa8";
+            icon_col = g_theme.accent;
+        }
+    } else if (t->osd_type == 2) {
+        icon_glyph = "\xef\x84\x8b";
+        icon_col = g_theme.accent;
+    } else if (t->osd_type == 3) {
+        if (is_muted) {
+            icon_glyph = "\xef\x84\xb1";
+            icon_col = g_theme.alert;
+        } else {
+            icon_glyph = "\xef\x84\xb0";
+            icon_col = g_theme.accent;
+        }
+    }
+
+    draw_centered_icon(cr, g_theme.font_bold, icon_glyph, 12, (t->h - 24) / 2.0, 24, 24, icon_col);
+
+    /* 2. Horizontal Slider Track */
+    int track_x = 44;
+    int track_h = 10;
+    int track_y = (t->h - track_h) / 2;
+    int track_w = t->w - track_x - 56;
+    double track_rad = (rad > 0.0) ? (track_h / 2.0) : 0.0;
+
+    /* Track background */
+    draw_rounded_rectangle(cr, track_x, track_y, track_w, track_h, track_rad);
+    cairo_set_source_rgba(cr, g_theme.bg_card_hover.r, g_theme.bg_card_hover.g, g_theme.bg_card_hover.b, 0.75);
+    cairo_fill_preserve(cr);
+    cairo_set_source_rgba(cr, g_theme.border.r, g_theme.border.g, g_theme.border.b, 0.4);
+    cairo_set_line_width(cr, 1.0);
+    cairo_stroke(cr);
+
+    /* Fill from left to right */
+    int fill_w = (int)((double)track_w * val / 100.0);
+    if (fill_w > 0) {
+        cairo_save(cr);
+        draw_rounded_rectangle(cr, track_x, track_y, track_w, track_h, track_rad);
+        cairo_clip(cr);
+        cairo_rectangle(cr, track_x, track_y, fill_w, track_h);
+        ColorRGBA fill_col = is_muted ? g_theme.alert : g_theme.accent;
+        cairo_set_source_rgba(cr, fill_col.r, fill_col.g, fill_col.b, 1.0);
+        cairo_fill(cr);
+        cairo_restore(cr);
+    }
+
+    /* 3. Right Label */
+    char pct_str[16];
+    if (is_muted) {
+        snprintf(pct_str, sizeof(pct_str), "MUT");
+    } else {
+        snprintf(pct_str, sizeof(pct_str), "%d%%", val);
+    }
+    ColorRGBA text_col = is_muted ? g_theme.alert : g_theme.fg_text;
+    draw_centered_icon(cr, g_theme.font_small, pct_str, track_x + track_w + 6, (t->h - 20) / 2.0, 44, 20, text_col);
+}
+
+static void render_normal_toast(cairo_t *cr, ActiveToast *t) {
+    cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
+    cairo_paint(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+
+    double rad = (g_theme.toast_radius > 0) ? (double)g_theme.toast_radius : 0.0;
+    double bwidth = (g_theme.toast_border_width > 0) ? (double)g_theme.toast_border_width : 1.0;
     ColorRGBA bg = (t->urgency == 2) ? g_theme.bg_card_urgent :
                    (t->hovered ? g_theme.bg_card_hover : g_theme.bg_card);
 
-    draw_rounded_rectangle(cr, 0.5, 0.5, t->w - 1.0, t->h - 1.0, g_theme.card_radius);
+    draw_rounded_rectangle(cr, 0.5, 0.5, t->w - 1.0, t->h - 1.0, rad);
     cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, bg.a);
     cairo_fill_preserve(cr);
 
-    /* Border */
     ColorRGBA bcol = (t->urgency == 2) ? g_theme.alert : g_theme.border;
     cairo_set_source_rgba(cr, bcol.r, bcol.g, bcol.b, bcol.a);
-    cairo_set_line_width(cr, (double)g_theme.border_width);
+    cairo_set_line_width(cr, bwidth);
     cairo_stroke(cr);
+
+    /* Left accent indicator */
+    ColorRGBA acc = (t->urgency == 2) ? g_theme.alert :
+                    (t->hovered ? g_theme.accent : g_theme.border);
+    cairo_save(cr);
+    draw_rounded_rectangle(cr, 0.5, 0.5, t->w - 1.0, t->h - 1.0, rad);
+    cairo_clip(cr);
+    cairo_rectangle(cr, 0, 0, 3.5, t->h);
+    cairo_set_source_rgba(cr, acc.r, acc.g, acc.b, 1.0);
+    cairo_fill(cr);
+    cairo_restore(cr);
 
     /* Avatar or Icon */
     char full_icon[768] = {0};
@@ -1001,25 +1342,35 @@ static void render_toast(ActiveToast *t) {
         resolve_icon_path(t->appname, full_icon, sizeof(full_icon));
     }
 
-    int img_size = 46;
-    int img_x = 12;
-    int img_y = (t->h - img_size) / 2;
+    int img_size = 44;
+    int img_x = 14;
+    int img_y = 12;
 
+    double icon_rad = (rad > 4.0) ? 6.0 : (rad == 0.0 ? 0.0 : 4.0);
     cairo_surface_t *icon_surf = (full_icon[0] != '\0') ? load_image_surface(full_icon, img_size, img_size) : NULL;
     if (icon_surf) {
         cairo_save(cr);
-        draw_rounded_rectangle(cr, img_x, img_y, img_size, img_size, 6.0);
+        draw_rounded_rectangle(cr, img_x, img_y, img_size, img_size, icon_rad);
         cairo_clip(cr);
         cairo_set_source_surface(cr, icon_surf, img_x, img_y);
         cairo_paint(cr);
         cairo_restore(cr);
         cairo_surface_destroy(icon_surf);
+
+        /* Icon border outline */
+        draw_rounded_rectangle(cr, img_x, img_y, img_size, img_size, icon_rad);
+        cairo_set_source_rgba(cr, g_theme.border.r, g_theme.border.g, g_theme.border.b, 0.4);
+        cairo_set_line_width(cr, 1.0);
+        cairo_stroke(cr);
     } else {
         /* Fallback icon letter badge */
         cairo_save(cr);
-        draw_rounded_rectangle(cr, img_x, img_y, img_size, img_size, 6.0);
-        cairo_set_source_rgba(cr, g_theme.border.r, g_theme.border.g, g_theme.border.b, 0.4);
-        cairo_fill(cr);
+        draw_rounded_rectangle(cr, img_x, img_y, img_size, img_size, icon_rad);
+        cairo_set_source_rgba(cr, g_theme.border.r, g_theme.border.g, g_theme.border.b, 0.3);
+        cairo_fill_preserve(cr);
+        cairo_set_source_rgba(cr, g_theme.border.r, g_theme.border.g, g_theme.border.b, 0.5);
+        cairo_set_line_width(cr, 1.0);
+        cairo_stroke(cr);
 
         cairo_set_source_rgba(cr, g_theme.accent.r, g_theme.accent.g, g_theme.accent.b, 1.0);
         char badge_str[2] = { (char)toupper((unsigned char)(t->appname[0] ? t->appname[0] : 'N')), '\0' };
@@ -1029,16 +1380,46 @@ static void render_toast(ActiveToast *t) {
         pango_layout_set_text(blayout, badge_str, -1);
         int bw, bh;
         pango_layout_get_pixel_size(blayout, &bw, &bh);
-        cairo_move_to(cr, img_x + (img_size - bw) / 2, img_y + (img_size - bh) / 2);
+        cairo_move_to(cr, img_x + (img_size - bw) / 2.0, img_y + (img_size - bh) / 2.0);
         pango_cairo_show_layout(cr, blayout);
         pango_font_description_free(bfd);
         g_object_unref(blayout);
         cairo_restore(cr);
     }
 
+    /* Close Button [x] */
+    t->close_w = 20;
+    t->close_h = 20;
+    t->close_x = t->w - t->close_w - 10;
+    t->close_y = 10;
+
+    if (t->close_hovered) {
+        cairo_save(cr);
+        draw_rounded_rectangle(cr, t->close_x, t->close_y, t->close_w, t->close_h, 4.0);
+        cairo_set_source_rgba(cr, g_theme.alert.r, g_theme.alert.g, g_theme.alert.b, 0.25);
+        cairo_fill_preserve(cr);
+        cairo_set_source_rgba(cr, g_theme.alert.r, g_theme.alert.g, g_theme.alert.b, 0.7);
+        cairo_set_line_width(cr, 1.0);
+        cairo_stroke(cr);
+        cairo_restore(cr);
+    }
+
+    /* Draw close cross */
+    cairo_set_source_rgba(cr, t->close_hovered ? g_theme.alert.r : g_theme.fg_muted.r,
+                              t->close_hovered ? g_theme.alert.g : g_theme.fg_muted.g,
+                              t->close_hovered ? g_theme.alert.b : g_theme.fg_muted.b,
+                              t->close_hovered ? 1.0 : 0.7);
+    cairo_set_line_width(cr, 1.5);
+    cairo_move_to(cr, t->close_x + 5.5, t->close_y + 5.5);
+    cairo_line_to(cr, t->close_x + t->close_w - 5.5, t->close_y + t->close_h - 5.5);
+    cairo_move_to(cr, t->close_x + t->close_w - 5.5, t->close_y + 5.5);
+    cairo_line_to(cr, t->close_x + 5.5, t->close_y + t->close_h - 5.5);
+    cairo_stroke(cr);
+
     /* Text Area */
     int text_x = img_x + img_size + 12;
-    int text_max_w = t->w - text_x - 30;
+    int text_max_w = t->close_x - text_x - 8;
+    int cur_y = 10;
 
     /* 1. App Name Badge */
     PangoLayout *layout = pango_cairo_create_layout(cr);
@@ -1047,54 +1428,94 @@ static void render_toast(ActiveToast *t) {
     pango_layout_set_width(layout, text_max_w * PANGO_SCALE);
     pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
     pango_layout_set_text(layout, t->appname[0] ? t->appname : "Notificación", -1);
-    cairo_set_source_rgba(cr, g_theme.fg_muted.r, g_theme.fg_muted.g, g_theme.fg_muted.b, 0.9);
-    cairo_move_to(cr, text_x, 10);
+    cairo_set_source_rgba(cr, g_theme.fg_muted.r, g_theme.fg_muted.g, g_theme.fg_muted.b, 0.85);
+    cairo_move_to(cr, text_x, cur_y);
     pango_cairo_show_layout(cr, layout);
+    int app_h = 0;
+    pango_layout_get_pixel_size(layout, NULL, &app_h);
     pango_font_description_free(f_small);
+    cur_y += app_h + 2;
 
     /* 2. Summary */
     PangoFontDescription *f_bold = pango_font_description_from_string(g_theme.font_bold);
     pango_layout_set_font_description(layout, f_bold);
     pango_layout_set_width(layout, text_max_w * PANGO_SCALE);
+    pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
     pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
     pango_layout_set_text(layout, t->summary[0] ? t->summary : "", -1);
     cairo_set_source_rgba(cr, g_theme.fg_text.r, g_theme.fg_text.g, g_theme.fg_text.b, 1.0);
-    cairo_move_to(cr, text_x, 26);
+    cairo_move_to(cr, text_x, cur_y);
     pango_cairo_show_layout(cr, layout);
+    int sum_h = 0;
+    pango_layout_get_pixel_size(layout, NULL, &sum_h);
     pango_font_description_free(f_bold);
+    cur_y += sum_h + 3;
 
     /* 3. Body */
     if (t->body[0] != '\0') {
         PangoFontDescription *f_norm = pango_font_description_from_string(g_theme.font_normal);
         pango_layout_set_font_description(layout, f_norm);
         pango_layout_set_width(layout, text_max_w * PANGO_SCALE);
+        pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
+        pango_layout_set_height(layout, 54 * PANGO_SCALE);
         pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
-        pango_layout_set_height(layout, 36 * PANGO_SCALE); /* up to 2 lines */
 
         set_pango_text_or_markup(layout, t->body);
 
         cairo_set_source_rgba(cr, g_theme.fg_text.r, g_theme.fg_text.g, g_theme.fg_text.b, 0.85);
-        cairo_move_to(cr, text_x, 44);
+        cairo_move_to(cr, text_x, cur_y);
         pango_cairo_show_layout(cr, layout);
         pango_font_description_free(f_norm);
     }
     g_object_unref(layout);
 
-    /* Close Button [x] */
-    t->close_w = 20;
-    t->close_h = 20;
-    t->close_x = t->w - t->close_w - 8;
-    t->close_y = 8;
+    /* 4. In-card Progress Bar (for standard notifications) */
+    if (t->progress_value >= 0) {
+        int p_val = t->progress_value;
+        if (p_val < 0) p_val = 0;
+        if (p_val > 100) p_val = 100;
 
-    cairo_set_source_rgba(cr, g_theme.fg_muted.r, g_theme.fg_muted.g, g_theme.fg_muted.b, 0.7);
-    cairo_set_line_width(cr, 1.5);
-    cairo_move_to(cr, t->close_x + 5, t->close_y + 5);
-    cairo_line_to(cr, t->close_x + t->close_w - 5, t->close_y + t->close_h - 5);
-    cairo_move_to(cr, t->close_x + t->close_w - 5, t->close_y + 5);
-    cairo_line_to(cr, t->close_x + 5, t->close_y + t->close_h - 5);
-    cairo_stroke(cr);
+        int bar_x = text_x;
+        int bar_y = t->h - 12;
+        int bar_w = t->w - bar_x - 14;
+        int bar_h = 5;
+        double bar_rad = (rad > 0.0) ? 2.5 : 0.0;
 
-    /* Flush Cairo to Pixmap and CopyArea to Window */
+        draw_rounded_rectangle(cr, bar_x, bar_y, bar_w, bar_h, bar_rad);
+        cairo_set_source_rgba(cr, g_theme.border.r, g_theme.border.g, g_theme.border.b, 0.4);
+        cairo_fill(cr);
+
+        int fill_w = (int)((double)bar_w * p_val / 100.0);
+        if (fill_w > 0) {
+            cairo_save(cr);
+            draw_rounded_rectangle(cr, bar_x, bar_y, bar_w, bar_h, bar_rad);
+            cairo_clip(cr);
+            cairo_rectangle(cr, bar_x, bar_y, fill_w, bar_h);
+            cairo_set_source_rgba(cr, g_theme.accent.r, g_theme.accent.g, g_theme.accent.b, 1.0);
+            cairo_fill(cr);
+            cairo_restore(cr);
+        }
+    }
+}
+
+static void render_toast(ActiveToast *t) {
+    if (!t->active || !t->win || !t->pixmap) return;
+
+    cairo_surface_t *surf = cairo_xlib_surface_create(g_dpy, t->pixmap,
+                                                     g_visual,
+                                                     t->w, t->h);
+    cairo_t *cr = cairo_create(surf);
+
+    if (t->is_osd) {
+        if (strcasecmp(g_theme.osd_orientation, "horizontal") == 0) {
+            render_osd_horizontal(cr, t);
+        } else {
+            render_osd_vertical(cr, t);
+        }
+    } else {
+        render_normal_toast(cr, t);
+    }
+
     cairo_destroy(cr);
     cairo_surface_destroy(surf);
 
@@ -1108,29 +1529,43 @@ static void update_toasts_layout(void) {
     if (g_toast_count == 0) return;
 
     DetectedBar bar = detect_polybar_geometry(g_dpy, g_root, g_screen_h);
-    int gap = 12;
+    int gap = g_theme.toast_gap > 0 ? g_theme.toast_gap : 10;
     int start_y = (bar.found && bar.pos == BAR_POS_TOP) ? (bar.bar_y + bar.bar_h + gap) : gap;
 
+    int normal_acc_y = 0;
     for (int i = 0; i < g_toast_count; i++) {
         ActiveToast *t = &g_toasts[i];
         if (!t->active) continue;
 
-        t->x = g_screen_w - t->w - gap;
-        if (bar.found && bar.pos == BAR_POS_BOTTOM) {
-            /* Stacking upwards from bottom bar */
-            int bottom_anchor = bar.bar_y - gap;
-            int total_height = 0;
-            for (int k = 0; k <= i; k++) {
-                total_height += g_toasts[k].h + TOAST_GAP;
+        if (t->is_osd) {
+            /* Position OSD independently */
+            if (strcasecmp(g_theme.osd_orientation, "horizontal") == 0) {
+                if (strcasecmp(g_theme.osd_position, "center") == 0) {
+                    t->x = (g_screen_w - t->w) / 2;
+                    t->y = g_screen_h - t->h - 80;
+                } else if (strcasecmp(g_theme.osd_position, "top_right") == 0) {
+                    t->x = g_screen_w - t->w - g_theme.osd_margin;
+                    t->y = start_y;
+                } else {
+                    t->x = g_screen_w - t->w - g_theme.osd_margin;
+                    t->y = (g_screen_h - t->h) / 2;
+                }
+            } else {
+                /* Vertical OSD: placed on the right side, vertically centered */
+                t->x = g_screen_w - t->w - g_theme.osd_margin;
+                t->y = (g_screen_h - t->h) / 2;
             }
-            t->y = bottom_anchor - total_height + TOAST_GAP;
         } else {
-            /* Stacking downwards from top */
-            int offset = 0;
-            for (int k = 0; k < i; k++) {
-                offset += g_toasts[k].h + TOAST_GAP;
+            /* Normal notification toast */
+            t->x = g_screen_w - t->w - gap;
+            if (bar.found && bar.pos == BAR_POS_BOTTOM) {
+                int bottom_anchor = bar.bar_y - gap;
+                normal_acc_y += t->h + gap;
+                t->y = bottom_anchor - normal_acc_y + gap;
+            } else {
+                t->y = start_y + normal_acc_y;
+                normal_acc_y += t->h + gap;
             }
-            t->y = start_y + offset;
         }
 
         XMoveWindow(g_dpy, t->win, t->x, t->y);
@@ -1170,10 +1605,100 @@ static void dismiss_all_toasts(void) {
     }
 }
 
+static int calculate_toast_height(const char *summary, const char *body, int progress_val) {
+    int img_size = 44;
+    int base_h = 14 + img_size + 14; /* 72px */
+    int text_w = g_theme.toast_w - (14 + img_size + 12) - 38;
+    if (text_w < 100) text_w = 200;
+
+    int text_h = 16; /* appname */
+
+    cairo_surface_t *surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
+    cairo_t *cr = cairo_create(surf);
+    PangoLayout *layout = pango_cairo_create_layout(cr);
+
+    PangoFontDescription *f_bold = pango_font_description_from_string(g_theme.font_bold);
+    pango_layout_set_font_description(layout, f_bold);
+    pango_layout_set_width(layout, text_w * PANGO_SCALE);
+    pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
+    pango_layout_set_text(layout, summary ? summary : "", -1);
+    int sum_h = 0;
+    pango_layout_get_pixel_size(layout, NULL, &sum_h);
+    pango_font_description_free(f_bold);
+    text_h += sum_h + 3;
+
+    if (body && body[0]) {
+        PangoFontDescription *f_norm = pango_font_description_from_string(g_theme.font_normal);
+        pango_layout_set_font_description(layout, f_norm);
+        pango_layout_set_width(layout, text_w * PANGO_SCALE);
+        pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
+        pango_layout_set_height(layout, 54 * PANGO_SCALE);
+        pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
+        set_pango_text_or_markup(layout, body);
+        int b_h = 0;
+        pango_layout_get_pixel_size(layout, NULL, &b_h);
+        pango_font_description_free(f_norm);
+        text_h += b_h + 4;
+    }
+
+    g_object_unref(layout);
+    cairo_destroy(cr);
+    cairo_surface_destroy(surf);
+
+    int total_h = 10 + text_h + 12;
+    if (total_h < base_h) total_h = base_h;
+    if (progress_val >= 0) total_h += 14;
+    return total_h;
+}
+
+static void reload_all_theme_and_toasts(void) {
+    load_theme_and_config(&g_theme);
+    for (int i = 0; i < g_toast_count; i++) {
+        if (g_toasts[i].active) {
+            int nw = g_toasts[i].is_osd ? g_theme.osd_w : g_theme.toast_w;
+            int nh = g_toasts[i].is_osd ? g_theme.osd_h :
+                     calculate_toast_height(g_toasts[i].summary, g_toasts[i].body, g_toasts[i].progress_value);
+            if (g_toasts[i].w != nw || g_toasts[i].h != nh) {
+                g_toasts[i].w = nw;
+                g_toasts[i].h = nh;
+                if (g_toasts[i].pixmap) XFreePixmap(g_dpy, g_toasts[i].pixmap);
+                g_toasts[i].pixmap = XCreatePixmap(g_dpy, g_toasts[i].win, g_toasts[i].w, g_toasts[i].h, g_depth);
+                XResizeWindow(g_dpy, g_toasts[i].win, g_toasts[i].w, g_toasts[i].h);
+            }
+            render_toast(&g_toasts[i]);
+        }
+    }
+    update_toasts_layout();
+}
+
 static void show_or_update_toast(uint32_t id, const char *sender, const char *app,
                                  const char *summary, const char *body, int urgency,
-                                 const char *icon, const char *avatar, int timeout_ms) {
-    if (g_dnd || is_center_currently_visible()) return;
+                                 const char *icon, const char *avatar, int timeout_ms,
+                                 int progress_val) {
+    bool is_osd = false;
+    int osd_type = 0;
+    if (g_theme.osd_enabled) {
+        if ((app && (strcasecmp(app, "sys_control") == 0 || strcasecmp(app, "sys_control.sh") == 0)) ||
+            (summary && (strcasecmp(summary, "Volumen") == 0 ||
+                         strcasecmp(summary, "Volumen (Silenciado)") == 0 ||
+                         strcasecmp(summary, "Brillo") == 0 ||
+                         strcasecmp(summary, "Micrófono") == 0))) {
+            is_osd = true;
+            if (summary && strcasestr(summary, "brillo")) osd_type = 2;
+            else if (summary && strcasestr(summary, "micr")) osd_type = 3;
+            else osd_type = 1;
+        }
+    }
+
+    if (is_osd && progress_val < 0 && body) {
+        int parsed = -1;
+        if (sscanf(body, "%d%%", &parsed) == 1 && parsed >= 0 && parsed <= 100) {
+            progress_val = parsed;
+        }
+    }
+
+    /* OSD is allowed to show even if DND or center is visible so hardware volume keys always give feedback */
+    if (!is_osd && (g_dnd || is_center_currently_visible())) return;
 
     /* Check if toast with this id already exists */
     for (int i = 0; i < g_toast_count; i++) {
@@ -1186,9 +1711,25 @@ static void show_or_update_toast(uint32_t id, const char *sender, const char *ap
             t->urgency = urgency;
             if (icon) snprintf(t->icon_path, sizeof(t->icon_path), "%s", icon);
             if (avatar) snprintf(t->avatar, sizeof(t->avatar), "%s", avatar);
-            t->timeout_ms = (timeout_ms >= 0) ? timeout_ms : DEFAULT_TIMEOUT_MS;
+            t->progress_value = progress_val;
+            t->is_osd = is_osd;
+            t->osd_type = osd_type;
+            t->timeout_ms = (timeout_ms > 0) ? timeout_ms : (is_osd ? 1500 : DEFAULT_TIMEOUT_MS);
             t->show_time_ms = get_monotonic_ms();
-            render_toast(t);
+
+            int wanted_w = is_osd ? g_theme.osd_w : g_theme.toast_w;
+            int wanted_h = is_osd ? g_theme.osd_h : calculate_toast_height(t->summary, t->body, t->progress_value);
+
+            if (t->w != wanted_w || t->h != wanted_h) {
+                t->w = wanted_w;
+                t->h = wanted_h;
+                if (t->pixmap) XFreePixmap(g_dpy, t->pixmap);
+                t->pixmap = XCreatePixmap(g_dpy, t->win, t->w, t->h, g_depth);
+                XResizeWindow(g_dpy, t->win, t->w, t->h);
+                update_toasts_layout();
+            } else {
+                render_toast(t);
+            }
             return;
         }
     }
@@ -1208,29 +1749,38 @@ static void show_or_update_toast(uint32_t id, const char *sender, const char *ap
     t->urgency = urgency;
     if (icon) snprintf(t->icon_path, sizeof(t->icon_path), "%s", icon);
     if (avatar) snprintf(t->avatar, sizeof(t->avatar), "%s", avatar);
-    t->timeout_ms = (timeout_ms > 0) ? timeout_ms : (timeout_ms == 0 ? 0 : DEFAULT_TIMEOUT_MS);
+    t->progress_value = progress_val;
+    t->is_osd = is_osd;
+    t->osd_type = osd_type;
+    t->timeout_ms = (timeout_ms > 0) ? timeout_ms : (is_osd ? 1500 : (timeout_ms == 0 ? 0 : DEFAULT_TIMEOUT_MS));
     t->show_time_ms = get_monotonic_ms();
     t->active = true;
 
-    t->w = TOAST_W;
-    t->h = (t->body[0] != '\0') ? 88 : 66;
+    if (is_osd) {
+        t->w = g_theme.osd_w;
+        t->h = g_theme.osd_h;
+    } else {
+        t->w = g_theme.toast_w;
+        t->h = calculate_toast_height(t->summary, t->body, t->progress_value);
+    }
 
     XSetWindowAttributes swa;
     swa.override_redirect = True;
+    swa.colormap = g_colormap;
+    swa.border_pixel = 0;
     swa.background_pixel = 0;
-    swa.event_mask = ExposureMask | ButtonPressMask | EnterWindowMask | LeaveWindowMask;
+    swa.event_mask = ExposureMask | ButtonPressMask | EnterWindowMask | LeaveWindowMask | PointerMotionMask;
 
     t->win = XCreateWindow(g_dpy, g_root, 0, 0, t->w, t->h, 0,
-                           CopyFromParent, InputOutput, CopyFromParent,
-                           CWOverrideRedirect | CWEventMask, &swa);
+                           g_depth, InputOutput, g_visual,
+                           CWOverrideRedirect | CWColormap | CWBorderPixel | CWBackPixel | CWEventMask, &swa);
 
     XClassHint ch;
-    ch.res_name = (char *)"i3dots-notif-toast";
-    ch.res_class = (char *)"i3dots-notif-toast";
+    ch.res_name = (char *)(is_osd ? "i3dots-osd" : "i3dots-notif-toast");
+    ch.res_class = (char *)(is_osd ? "i3dots-osd" : "i3dots-notif-toast");
     XSetClassHint(g_dpy, t->win, &ch);
 
-    t->pixmap = XCreatePixmap(g_dpy, t->win, t->w, t->h,
-                              DefaultDepth(g_dpy, g_screen));
+    t->pixmap = XCreatePixmap(g_dpy, t->win, t->w, t->h, g_depth);
 
     g_toast_count++;
     update_toasts_layout();
@@ -1437,6 +1987,7 @@ static DBusHandlerResult handle_dbus_message(DBusConnection *conn, DBusMessage *
 
         /* Parse hints */
         int urgency = 1;
+        int progress_val = -1;
         bool is_relaunch = false;
         bool no_history = false;
         char saved_avatar[64] = {0};
@@ -1471,6 +2022,21 @@ static DBusHandlerResult handle_dbus_message(DBusConnection *conn, DBusMessage *
                             urgency = u;
                         }
                         json_object_set_new(hints_obj, "urgency", json_integer(urgency));
+                    } else if (strcmp(key, "value") == 0) {
+                        if (vt == DBUS_TYPE_INT32 || vt == DBUS_TYPE_UINT32) {
+                            int v = 0;
+                            dbus_message_iter_get_basic(&var_iter, &v);
+                            progress_val = v;
+                        } else if (vt == DBUS_TYPE_DOUBLE) {
+                            double d = 0;
+                            dbus_message_iter_get_basic(&var_iter, &d);
+                            progress_val = (int)d;
+                        } else if (vt == DBUS_TYPE_BYTE) {
+                            unsigned char b = 0;
+                            dbus_message_iter_get_basic(&var_iter, &b);
+                            progress_val = (int)b;
+                        }
+                        json_object_set_new(hints_obj, key, json_integer(progress_val));
                     } else if (strcmp(key, "x-i3dots-relaunch") == 0) {
                         is_relaunch = true;
                     } else if (strcmp(key, "x-i3dots-no-history") == 0 || strcmp(key, "transient") == 0) {
@@ -1533,6 +2099,16 @@ static DBusHandlerResult handle_dbus_message(DBusConnection *conn, DBusMessage *
             dbus_message_iter_get_basic(&iter, &expire_timeout);
         }
 
+        /* Fallback progress from body if sent by sys_control */
+        if (progress_val < 0 && body) {
+            int parsed_pct = -1;
+            if (sscanf(body, "%d%%", &parsed_pct) == 1 && parsed_pct >= 0 && parsed_pct <= 100) {
+                if (app && (strcasecmp(app, "sys_control") == 0 || strcasecmp(app, "sys_control.sh") == 0)) {
+                    progress_val = parsed_pct;
+                }
+            }
+        }
+
         /* Filter transient system notifications */
         if (app && (strcasecmp(app, "sys_control") == 0 || strcasecmp(app, "sys_control.sh") == 0)) {
             no_history = true;
@@ -1563,7 +2139,7 @@ static DBusHandlerResult handle_dbus_message(DBusConnection *conn, DBusMessage *
 
         /* Display on screen */
         show_or_update_toast(assigned_id, sender, app, summary, body, urgency,
-                             icon_to_save, saved_avatar, (int)expire_timeout);
+                             icon_to_save, saved_avatar, (int)expire_timeout, progress_val);
 
         json_decref(actions_arr);
         json_decref(hints_obj);
@@ -1746,10 +2322,7 @@ static DBusHandlerResult handle_dbus_message(DBusConnection *conn, DBusMessage *
 
     /* Method: ReloadTheme */
     if (strcmp(member, "ReloadTheme") == 0) {
-        load_theme_and_config(&g_theme);
-        for (int i = 0; i < g_toast_count; i++) {
-            if (g_toasts[i].active) render_toast(&g_toasts[i]);
-        }
+        reload_all_theme_and_toasts();
         DBusMessage *reply = dbus_message_new_method_return(msg);
         dbus_connection_send(conn, reply, NULL);
         dbus_message_unref(reply);
@@ -2291,6 +2864,17 @@ int main(int argc, char *argv[]) {
     g_screen_w = DisplayWidth(g_dpy, g_screen);
     g_screen_h = DisplayHeight(g_dpy, g_screen);
 
+    XVisualInfo vinfo;
+    if (XMatchVisualInfo(g_dpy, g_screen, 32, TrueColor, &vinfo)) {
+        g_visual = vinfo.visual;
+        g_depth = 32;
+        g_colormap = XCreateColormap(g_dpy, g_root, g_visual, AllocNone);
+    } else {
+        g_visual = DefaultVisual(g_dpy, g_screen);
+        g_depth = DefaultDepth(g_dpy, g_screen);
+        g_colormap = DefaultColormap(g_dpy, g_screen);
+    }
+
     load_theme_and_config(&g_theme);
     g_dnd = load_dnd_state();
     prune_all_orphaned_assets();
@@ -2299,19 +2883,31 @@ int main(int argc, char *argv[]) {
     int dbus_fd = -1;
     dbus_connection_get_socket(conn, &dbus_fd);
 
-    struct pollfd pfds[2];
+    int inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    if (inotify_fd >= 0) {
+        const char *home = getenv("HOME");
+        if (!home) home = "/home/dereck";
+        char dir_path[512];
+        snprintf(dir_path, sizeof(dir_path), "%s/.config/polybar", home);
+        inotify_add_watch(inotify_fd, dir_path, IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_MODIFY);
+        snprintf(dir_path, sizeof(dir_path), "%s/.config/notif_center", home);
+        inotify_add_watch(inotify_fd, dir_path, IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_MODIFY);
+        snprintf(dir_path, sizeof(dir_path), "%s/.config/i3dots/core/state/i3dots/notifications", home);
+        inotify_add_watch(inotify_fd, dir_path, IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_MODIFY);
+    }
+
+    struct pollfd pfds[3];
     pfds[0].fd = x11_fd;
     pfds[0].events = POLLIN;
     pfds[1].fd = dbus_fd;
     pfds[1].events = POLLIN;
+    pfds[2].fd = inotify_fd;
+    pfds[2].events = POLLIN;
 
     while (g_running) {
         if (g_reload_requested) {
             g_reload_requested = 0;
-            load_theme_and_config(&g_theme);
-            for (int i = 0; i < g_toast_count; i++) {
-                if (g_toasts[i].active) render_toast(&g_toasts[i]);
-            }
+            reload_all_theme_and_toasts();
         }
 
         /* 1. Process all pending X11 events */
@@ -2340,9 +2936,25 @@ int main(int argc, char *argv[]) {
                 for (int i = 0; i < g_toast_count; i++) {
                     if (g_toasts[i].active && g_toasts[i].win == ev.xcrossing.window) {
                         g_toasts[i].hovered = false;
-                        /* Reset timer after hover ends */
+                        g_toasts[i].close_hovered = false;
                         g_toasts[i].show_time_ms = get_monotonic_ms();
                         render_toast(&g_toasts[i]);
+                        break;
+                    }
+                }
+            } else if (ev.type == MotionNotify) {
+                for (int i = 0; i < g_toast_count; i++) {
+                    if (g_toasts[i].active && g_toasts[i].win == ev.xmotion.window) {
+                        if (!g_toasts[i].is_osd) {
+                            int mx = ev.xmotion.x;
+                            int my = ev.xmotion.y;
+                            bool in_close = (mx >= g_toasts[i].close_x && mx <= g_toasts[i].close_x + g_toasts[i].close_w &&
+                                             my >= g_toasts[i].close_y && my <= g_toasts[i].close_y + g_toasts[i].close_h);
+                            if (in_close != g_toasts[i].close_hovered) {
+                                g_toasts[i].close_hovered = in_close;
+                                render_toast(&g_toasts[i]);
+                            }
+                        }
                         break;
                     }
                 }
@@ -2351,22 +2963,57 @@ int main(int argc, char *argv[]) {
                     if (g_toasts[i].active && g_toasts[i].win == ev.xbutton.window) {
                         int bx = ev.xbutton.x;
                         int by = ev.xbutton.y;
+                        int btn = ev.xbutton.button;
 
-                        if (ev.xbutton.button == 1) {
-                            /* Left click */
-                            if (bx >= g_toasts[i].close_x && bx <= g_toasts[i].close_x + g_toasts[i].close_w &&
-                                by >= g_toasts[i].close_y && by <= g_toasts[i].close_y + g_toasts[i].close_h) {
-                                /* Close button clicked: dismiss toast from screen, keep in history */
+                        if (g_toasts[i].is_osd) {
+                            /* Interactive OSD scroll and click controls */
+                            if (btn == 4) {
+                                /* Scroll Up: increase volume / brightness */
+                                if (g_toasts[i].osd_type == 1) {
+                                    system("$HOME/.local/bin/sys_control.sh volume +5% >/dev/null 2>&1 &");
+                                } else if (g_toasts[i].osd_type == 2) {
+                                    system("$HOME/.local/bin/sys_control.sh brightness +5% >/dev/null 2>&1 &");
+                                }
+                                g_toasts[i].show_time_ms = get_monotonic_ms();
+                            } else if (btn == 5) {
+                                /* Scroll Down: decrease volume / brightness */
+                                if (g_toasts[i].osd_type == 1) {
+                                    system("$HOME/.local/bin/sys_control.sh volume -5% >/dev/null 2>&1 &");
+                                } else if (g_toasts[i].osd_type == 2) {
+                                    system("$HOME/.local/bin/sys_control.sh brightness -5% >/dev/null 2>&1 &");
+                                }
+                                g_toasts[i].show_time_ms = get_monotonic_ms();
+                            } else if (btn == 1) {
+                                /* Left click */
+                                if (g_toasts[i].osd_type == 1) {
+                                    system("$HOME/.local/bin/sys_control.sh mute >/dev/null 2>&1 &");
+                                } else if (g_toasts[i].osd_type == 3) {
+                                    system("$HOME/.local/bin/sys_control.sh mic_mute >/dev/null 2>&1 &");
+                                } else {
+                                    dismiss_toast_by_index(i);
+                                }
+                            } else if (btn == 3) {
+                                /* Right click: dismiss */
                                 dismiss_toast_by_index(i);
-                            } else {
-                                /* Card body clicked: invoke default action and dismiss toast */
-                                uint32_t cid = g_toasts[i].id;
-                                dismiss_toast_by_index(i);
-                                invoke_action(conn, cid, "default");
                             }
-                        } else if (ev.xbutton.button == 2 || ev.xbutton.button == 3) {
-                            /* Middle or right click: dismiss toast without action */
-                            dismiss_toast_by_index(i);
+                        } else {
+                            /* Normal notification card */
+                            if (btn == 1) {
+                                /* Left click */
+                                if (bx >= g_toasts[i].close_x && bx <= g_toasts[i].close_x + g_toasts[i].close_w &&
+                                    by >= g_toasts[i].close_y && by <= g_toasts[i].close_y + g_toasts[i].close_h) {
+                                    /* Close button clicked */
+                                    dismiss_toast_by_index(i);
+                                } else {
+                                    /* Card clicked: invoke default action and dismiss toast */
+                                    uint32_t cid = g_toasts[i].id;
+                                    dismiss_toast_by_index(i);
+                                    invoke_action(conn, cid, "default");
+                                }
+                            } else if (btn == 2 || btn == 3) {
+                                /* Middle or right click: dismiss without action */
+                                dismiss_toast_by_index(i);
+                            }
                         }
                         break;
                     }
@@ -2384,16 +3031,15 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < g_toast_count; i++) {
             if (g_toasts[i].active && !g_toasts[i].hovered && g_toasts[i].timeout_ms > 0) {
                 if (now_ms - g_toasts[i].show_time_ms >= g_toasts[i].timeout_ms) {
-                    /* Timed out: dismiss toast from screen WITHOUT emitting NotificationClosed */
                     dismiss_toast_by_index(i);
-                    i--; /* adjust index after removal */
+                    i--;
                 }
             }
         }
 
         /* 4. Poll on descriptors */
-        int poll_timeout = 50; /* 50ms */
-        int poll_res = poll(pfds, 2, poll_timeout);
+        int poll_count = (inotify_fd >= 0) ? 3 : 2;
+        int poll_res = poll(pfds, poll_count, 50);
         if (poll_res > 0) {
             if (pfds[1].revents & (POLLIN | POLLPRI)) {
                 dbus_connection_read_write(conn, 0);
@@ -2401,10 +3047,36 @@ int main(int argc, char *argv[]) {
                     dbus_connection_dispatch(conn);
                 }
             }
+            if (inotify_fd >= 0 && (pfds[2].revents & POLLIN)) {
+                char ibuf[4096] __attribute__((aligned(__alignof__(struct inotify_event))));
+                ssize_t len;
+                bool reload_needed = false;
+                while ((len = read(inotify_fd, ibuf, sizeof(ibuf))) > 0) {
+                    for (char *ptr = ibuf; ptr < ibuf + len; ) {
+                        const struct inotify_event *event = (const struct inotify_event *)ptr;
+                        if (event->len > 0) {
+                            if (strcmp(event->name, "colors.ini") == 0 ||
+                                strcmp(event->name, "config.ini") == 0) {
+                                reload_needed = true;
+                            } else if (strcmp(event->name, "dnd.state") == 0) {
+                                g_dnd = load_dnd_state();
+                            }
+                        }
+                        ptr += sizeof(struct inotify_event) + event->len;
+                    }
+                }
+                if (reload_needed) {
+                    reload_all_theme_and_toasts();
+                }
+            }
         }
     }
 
     dismiss_all_toasts();
+    if (inotify_fd >= 0) close(inotify_fd);
+    if (g_colormap && g_colormap != DefaultColormap(g_dpy, g_screen)) {
+        XFreeColormap(g_dpy, g_colormap);
+    }
     if (g_dpy) XCloseDisplay(g_dpy);
     if (conn) dbus_connection_unref(conn);
     close(pid_fd);
