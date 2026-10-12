@@ -148,7 +148,7 @@ static void load_theme_and_config(ThemeConfig *th) {
     th->fg_muted = hex_to_color("#8b938a", 1.0);
     th->accent = hex_to_color("#97d5a5", 1.0);
     th->alert = hex_to_color("#ffb4ab", 1.0);
-    th->border = hex_to_color("#414941", 0.9);
+    th->border = hex_to_color("#414941", 0.35);
     th->card_radius = 0;
     th->border_width = 1;
     strcpy(th->font_small, "JetBrainsMono Nerd Font 8");
@@ -182,18 +182,21 @@ static void load_theme_and_config(ThemeConfig *th) {
         while (fgets(line, sizeof(line), f)) {
             char key[64], val[64];
             if (sscanf(line, "%63s = %63s", key, val) == 2) {
-                if (strcmp(key, "background-alt") == 0) {
+                if (strcmp(key, "background-solid") == 0 || strcmp(key, "compact-bar-background") == 0) {
                     th->bg_card = hex_to_color(val, 1.0);
+                } else if (strcmp(key, "background-alt") == 0) {
                     th->bg_card_hover = hex_to_color(val, 1.0);
-                    th->bg_card_hover.r = fmin(1.0, th->bg_card_hover.r + 0.08);
-                    th->bg_card_hover.g = fmin(1.0, th->bg_card_hover.g + 0.08);
-                    th->bg_card_hover.b = fmin(1.0, th->bg_card_hover.b + 0.08);
-                } else if (strcmp(key, "gray0") == 0) th->bg_card_hover = hex_to_color(val, 1.0);
-                else if (strcmp(key, "gray1") == 0) th->border = hex_to_color(val, 0.9);
-                else if (strcmp(key, "foreground") == 0) th->fg_text = hex_to_color(val, 1.0);
-                else if (strcmp(key, "primary") == 0) th->accent = hex_to_color(val, 1.0);
-                else if (strcmp(key, "alert") == 0 || strcmp(key, "red") == 0) th->alert = hex_to_color(val, 1.0);
-                else if (strcmp(key, "disabled") == 0) th->fg_muted = hex_to_color(val, 1.0);
+                } else if (strcmp(key, "gray1") == 0) {
+                    th->border = hex_to_color(val, 0.35);
+                } else if (strcmp(key, "foreground") == 0) {
+                    th->fg_text = hex_to_color(val, 1.0);
+                } else if (strcmp(key, "primary") == 0) {
+                    th->accent = hex_to_color(val, 1.0);
+                } else if (strcmp(key, "alert") == 0 || strcmp(key, "red") == 0) {
+                    th->alert = hex_to_color(val, 1.0);
+                } else if (strcmp(key, "disabled") == 0) {
+                    th->fg_muted = hex_to_color(val, 1.0);
+                }
             }
         }
         fclose(f);
@@ -232,7 +235,7 @@ static void load_theme_and_config(ThemeConfig *th) {
                 if (strcasecmp(cur_sec, "colors") == 0 && val[0] == '#') {
                     if (strcmp(key, "bg_card") == 0) th->bg_card = hex_to_color(val, 1.0);
                     else if (strcmp(key, "bg_card_hover") == 0) th->bg_card_hover = hex_to_color(val, 1.0);
-                    else if (strcmp(key, "border") == 0) th->border = hex_to_color(val, 0.9);
+                    else if (strcmp(key, "border") == 0) th->border = hex_to_color(val, 0.4);
                     else if (strcmp(key, "accent") == 0) th->accent = hex_to_color(val, 1.0);
                     else if (strcmp(key, "alert") == 0) th->alert = hex_to_color(val, 1.0);
                     else if (strcmp(key, "fg_text") == 0) th->fg_text = hex_to_color(val, 1.0);
@@ -1323,8 +1326,7 @@ static void render_normal_toast(cairo_t *cr, ActiveToast *t) {
     cairo_stroke(cr);
 
     /* Left accent indicator */
-    ColorRGBA acc = (t->urgency == 2) ? g_theme.alert :
-                    (t->hovered ? g_theme.accent : g_theme.border);
+    ColorRGBA acc = (t->urgency == 2) ? g_theme.alert : g_theme.accent;
     cairo_save(cr);
     draw_rounded_rectangle(cr, 0.5, 0.5, t->w - 1.0, t->h - 1.0, rad);
     cairo_clip(cr);
