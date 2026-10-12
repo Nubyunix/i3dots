@@ -685,6 +685,18 @@ static void append_to_history(uint32_t notif_id, const char *sender, const char 
     }
     json_object_set_new(root, "next_id", json_integer(next_id));
 
+    /* Remove preexisting entry with same ID if replacing to ensure strict uniqueness */
+    if (notif_id > 0) {
+        for (size_t i = 0; i < json_array_size(entries); i++) {
+            json_t *ex = json_array_get(entries, i);
+            json_t *ex_id = json_object_get(ex, "id");
+            if (ex_id && json_is_integer(ex_id) && (int)json_integer_value(ex_id) == current_id) {
+                json_array_remove(entries, i);
+                break;
+            }
+        }
+    }
+
     json_t *item = json_object();
     json_object_set_new(item, "id", json_integer(current_id));
     if (sender && sender[0]) json_object_set_new(item, "sender", json_string(sender));
@@ -1295,6 +1307,70 @@ static const char *g_introspection_xml =
 "  </interface>\n"
 "</node>\n";
 
+static uint32_t allocate_next_notification_id(uint32_t replaces_id) {
+    static uint32_t s_cached_max = 0;
+
+    char hist_file[512];
+    get_notif_paths(NULL, 0, hist_file, sizeof(hist_file), NULL, 0);
+
+    char lock_path[768];
+    snprintf(lock_path, sizeof(lock_path), "%s.lock", hist_file);
+    int lock_fd = open(lock_path, O_RDWR | O_CREAT, 0644);
+    if (lock_fd >= 0) flock(lock_fd, LOCK_EX);
+
+    uint32_t max_id = 0;
+    uint32_t next_id = 1;
+
+    json_error_t err;
+    json_t *root = json_load_file(hist_file, 0, &err);
+    if (root && json_is_object(root)) {
+        json_t *jn = json_object_get(root, "next_id");
+        if (jn && json_is_integer(jn)) next_id = (uint32_t)json_integer_value(jn);
+
+        json_t *entries = json_object_get(root, "entries");
+        if (entries && json_is_array(entries)) {
+            for (size_t i = 0; i < json_array_size(entries); i++) {
+                json_t *item = json_array_get(entries, i);
+                json_t *jid = json_object_get(item, "id");
+                if (jid && json_is_integer(jid)) {
+                    uint32_t val = (uint32_t)json_integer_value(jid);
+                    if (val > max_id) max_id = val;
+                }
+            }
+        }
+    }
+
+    uint32_t assigned = 0;
+    if (replaces_id > 0) {
+        assigned = replaces_id;
+    } else {
+        uint32_t candidate = next_id;
+        if (max_id >= candidate) candidate = max_id + 1;
+        if (s_cached_max >= candidate) candidate = s_cached_max + 1;
+        assigned = candidate;
+    }
+
+    if (assigned > s_cached_max) s_cached_max = assigned;
+
+    if (root && json_is_object(root)) {
+        uint32_t file_next = s_cached_max + 1;
+        json_object_set_new(root, "next_id", json_integer((json_int_t)file_next));
+        char tmp_file[768];
+        snprintf(tmp_file, sizeof(tmp_file), "%s.tmp", hist_file);
+        if (json_dump_file(root, tmp_file, JSON_INDENT(2)) == 0) {
+            rename(tmp_file, hist_file);
+        }
+        json_decref(root);
+    }
+
+    if (lock_fd >= 0) {
+        flock(lock_fd, LOCK_UN);
+        close(lock_fd);
+    }
+
+    return assigned;
+}
+
 static DBusHandlerResult handle_dbus_message(DBusConnection *conn, DBusMessage *msg, void *user_data) {
     (void)user_data;
 
@@ -1471,33 +1547,8 @@ static DBusHandlerResult handle_dbus_message(DBusConnection *conn, DBusMessage *
         /* Extract sender name */
         const char *sender = dbus_message_get_sender(msg);
 
-        /* Generate ID */
-        static uint32_t s_next_id = 1;
-        if (s_next_id == 1) {
-            char hist_file[512];
-            get_notif_paths(NULL, 0, hist_file, sizeof(hist_file), NULL, 0);
-            json_error_t jerr;
-            json_t *r = json_load_file(hist_file, 0, &jerr);
-            if (r) {
-                json_t *jn = json_object_get(r, "next_id");
-                if (jn && json_is_integer(jn)) s_next_id = (uint32_t)json_integer_value(jn);
-                json_t *entries = json_object_get(r, "entries");
-                if (entries && json_is_array(entries)) {
-                    for (size_t i = 0; i < json_array_size(entries); i++) {
-                        json_t *item = json_array_get(entries, i);
-                        json_t *jid = json_object_get(item, "id");
-                        if (jid && json_is_integer(jid)) {
-                            uint32_t val = (uint32_t)json_integer_value(jid);
-                            if (val >= s_next_id) s_next_id = val + 1;
-                        }
-                    }
-                }
-                json_decref(r);
-            }
-        }
-
-        uint32_t assigned_id = (replaces_id > 0) ? replaces_id : s_next_id++;
-        if (assigned_id >= s_next_id) s_next_id = assigned_id + 1;
+        /* Generate ID atomically */
+        uint32_t assigned_id = allocate_next_notification_id(replaces_id);
 
         /* Extract URLs */
         json_t *urls_arr = json_array();
