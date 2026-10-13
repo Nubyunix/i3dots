@@ -190,6 +190,7 @@ typedef struct {
 typedef struct {
     int id;
     char appname[64];
+    char desktop_entry[64];
     char summary[128];
     char body[512];
     char clean_body[512];
@@ -412,7 +413,10 @@ static void load_config(AppConfig *cfg) {
     fclose(f);
 }
 
+static void clear_icon_cache(void);
+
 static void load_theme(Theme *th) {
+    clear_icon_cache();
     th->bg_panel = hex_to_color("#181d18", 1.0);
     th->bg_card = hex_to_color("#262b26", 1.0);
     th->bg_card_hover = hex_to_color("#353a35", 1.0);
@@ -596,14 +600,18 @@ static void destroy_surface_cache(void) {
     g_surf_cache_count = 0;
 }
 
-#define ICON_CACHE_MAX 128
+#define ICON_CACHE_MAX 256
 typedef struct {
-    char name[64];
-    char path[256];
+    char name[128];
+    char path[512];
 } IconCacheEntry;
 
 static IconCacheEntry g_icon_cache[ICON_CACHE_MAX];
 static int g_icon_cache_count = 0;
+
+static void clear_icon_cache(void) {
+    g_icon_cache_count = 0;
+}
 
 static const char *find_in_icon_cache(const char *name) {
     if (!name || name[0] == '\0') return NULL;
@@ -836,61 +844,457 @@ static void clean_notification_body(const char *in, char *out, size_t out_len) {
     }
 }
 
-static void resolve_icon(const char *name, char *out, size_t out_len) {
-    if (!name || name[0] == '\0') {
-        if (out && out_len > 0) out[0] = '\0';
-        return;
-    }
-    if (access(name, R_OK) == 0) {
-        snprintf(out, out_len, "%s", name);
+static void get_configured_icon_theme(char *out, size_t out_len) {
+    if (!out || out_len == 0) return;
+    out[0] = '\0';
+
+    const char *home = getenv("HOME");
+    if (!home) {
+        snprintf(out, out_len, "hicolor");
         return;
     }
 
-    const char *cached = find_in_icon_cache(name);
-    if (cached) {
-        if (cached[0] != '\0') {
-            snprintf(out, out_len, "%s", cached);
-        } else if (out && out_len > 0) {
-            out[0] = '\0';
+    char path[512];
+    snprintf(path, sizeof(path), "%s/.config/gtk-3.0/settings.ini", home);
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        snprintf(path, sizeof(path), "%s/.config/xsettingsd/xsettingsd.conf", home);
+        f = fopen(path, "r");
+    }
+    if (!f) {
+        snprintf(path, sizeof(path), "%s/.gtkrc-2.0", home);
+        f = fopen(path, "r");
+    }
+
+    if (f) {
+        char line[256];
+        while (fgets(line, sizeof(line), f)) {
+            char *p = line;
+            while (isspace((unsigned char)*p)) p++;
+            if (strncmp(p, "gtk-icon-theme-name", 19) == 0) {
+                char *eq = strchr(p, '=');
+                if (eq) {
+                    eq++;
+                    while (isspace((unsigned char)*eq) || *eq == '"' || *eq == '\'') eq++;
+                    char *end = eq + strlen(eq) - 1;
+                    while (end > eq && (isspace((unsigned char)*end) || *end == '"' || *end == '\'')) {
+                        *end = '\0';
+                        end--;
+                    }
+                    snprintf(out, out_len, "%s", eq);
+                    fclose(f);
+                    return;
+                }
+            } else if (strncmp(p, "Net/IconThemeName", 17) == 0) {
+                char *q1 = strchr(p, '"');
+                if (q1) {
+                    char *q2 = strchr(q1 + 1, '"');
+                    if (q2) {
+                        *q2 = '\0';
+                        snprintf(out, out_len, "%s", q1 + 1);
+                        fclose(f);
+                        return;
+                    }
+                }
+            }
         }
-        return;
+        fclose(f);
     }
 
-    char low_name[128];
-    size_t len = strlen(name);
-    if (len >= sizeof(low_name)) len = sizeof(low_name) - 1;
-    for (size_t i = 0; i < len; i++) {
-        low_name[i] = (char)tolower((unsigned char)name[i]);
-    }
-    low_name[len] = '\0';
+    snprintf(out, out_len, "hicolor");
+}
 
-    const char *candidates[] = {
-        "/usr/share/pixmaps/%s.png",
-        "/usr/share/pixmaps/%s.svg",
-        "/usr/share/icons/Papirus/48x48/apps/%s.svg",
-        "/usr/share/icons/Papirus/32x32/apps/%s.svg",
-        "/usr/share/icons/Papirus/24x24/apps/%s.svg",
-        "/usr/share/icons/Papirus/16x16/apps/%s.svg",
-        "/usr/share/icons/hicolor/scalable/apps/%s.svg",
-        "/usr/share/icons/hicolor/48x48/apps/%s.png",
-        "/usr/share/icons/hicolor/32x32/apps/%s.png",
-        "/usr/share/icons/hicolor/128x128/apps/%s.png",
-        "/usr/share/icons/hicolor/256x256/apps/%s.png",
-        NULL
+static int get_icon_base_dirs(char dirs[][512], int max_dirs) {
+    int count = 0;
+    const char *home = getenv("HOME");
+    if (home) {
+        if (count < max_dirs) snprintf(dirs[count++], 512, "%s/.icons", home);
+        if (count < max_dirs) snprintf(dirs[count++], 512, "%s/.local/share/icons", home);
+    }
+
+    const char *data_dirs = getenv("XDG_DATA_DIRS");
+    if (data_dirs && data_dirs[0] != '\0') {
+        char copy[1024];
+        snprintf(copy, sizeof(copy), "%s", data_dirs);
+        char *tok = strtok(copy, ":");
+        while (tok && count < max_dirs) {
+            if (tok[0] != '\0') {
+                snprintf(dirs[count++], 512, "%s/icons", tok);
+            }
+            tok = strtok(NULL, ":");
+        }
+    } else {
+        if (count < max_dirs) snprintf(dirs[count++], 512, "/usr/local/share/icons");
+        if (count < max_dirs) snprintf(dirs[count++], 512, "/usr/share/icons");
+    }
+
+    return count;
+}
+
+static int build_theme_hierarchy(const char *root_theme, char themes[][64], int max_themes) {
+    int t_count = 0;
+    if (!root_theme || root_theme[0] == '\0') {
+        snprintf(themes[0], 64, "hicolor");
+        return 1;
+    }
+
+    snprintf(themes[t_count++], 64, "%s", root_theme);
+
+    char base_dirs[8][512];
+    int base_count = get_icon_base_dirs(base_dirs, 8);
+
+    for (int i = 0; i < t_count; i++) {
+        if (t_count >= max_themes) break;
+        const char *cur = themes[i];
+        if (strcasecmp(cur, "hicolor") == 0) continue;
+
+        char index_path[512] = {0};
+        for (int b = 0; b < base_count; b++) {
+            char try_p[1024];
+            snprintf(try_p, sizeof(try_p), "%s/%s/index.theme", base_dirs[b], cur);
+            if (access(try_p, R_OK) == 0) {
+                snprintf(index_path, sizeof(index_path), "%s", try_p);
+                break;
+            }
+        }
+        if (index_path[0] == '\0') continue;
+
+        FILE *f = fopen(index_path, "r");
+        if (!f) continue;
+
+        char line[512];
+        bool in_icon_theme = false;
+        while (fgets(line, sizeof(line), f)) {
+            char *p = line;
+            while (isspace((unsigned char)*p)) p++;
+            if (*p == '[') {
+                in_icon_theme = (strncmp(p, "[Icon Theme]", 12) == 0);
+            } else if (in_icon_theme && strncmp(p, "Inherits", 8) == 0) {
+                char *eq = strchr(p, '=');
+                if (eq) {
+                    eq++;
+                    char *tok = strtok(eq, ",\r\n\t ");
+                    while (tok && t_count < max_themes) {
+                        bool exists = false;
+                        for (int k = 0; k < t_count; k++) {
+                            if (strcasecmp(themes[k], tok) == 0) {
+                                exists = true;
+                                break;
+                            }
+                        }
+                        if (!exists && strlen(tok) > 0) {
+                            snprintf(themes[t_count++], 64, "%s", tok);
+                        }
+                        tok = strtok(NULL, ",\r\n\t ");
+                    }
+                }
+                break;
+            }
+        }
+        fclose(f);
+    }
+
+    bool has_hicolor = false;
+    for (int i = 0; i < t_count; i++) {
+        if (strcasecmp(themes[i], "hicolor") == 0) {
+            has_hicolor = true;
+            break;
+        }
+    }
+    if (!has_hicolor && t_count < max_themes) {
+        snprintf(themes[t_count++], 64, "hicolor");
+    }
+
+    return t_count;
+}
+
+static bool lookup_desktop_entry_icon(const char *app_or_entry, char *icon_out, size_t icon_len) {
+    if (!app_or_entry || app_or_entry[0] == '\0' || !icon_out || icon_len == 0) return false;
+    icon_out[0] = '\0';
+
+    const char *home = getenv("HOME");
+    char app_dirs[4][512];
+    int dir_count = 0;
+    if (home) {
+        snprintf(app_dirs[dir_count++], sizeof(app_dirs[0]), "%s/.local/share/applications", home);
+    }
+    snprintf(app_dirs[dir_count++], sizeof(app_dirs[0]), "/usr/local/share/applications");
+    snprintf(app_dirs[dir_count++], sizeof(app_dirs[0]), "/usr/share/applications");
+
+    char target_names[4][128];
+    int target_count = 0;
+
+    size_t in_len = strlen(app_or_entry);
+    if (in_len > 8 && strcasecmp(app_or_entry + in_len - 8, ".desktop") == 0) {
+        snprintf(target_names[target_count++], sizeof(target_names[0]), "%s", app_or_entry);
+    } else {
+        snprintf(target_names[target_count++], sizeof(target_names[0]), "%s.desktop", app_or_entry);
+
+        char dashed[128] = {0};
+        size_t dj = 0;
+        for (size_t i = 0; i < in_len && dj + 1 < sizeof(dashed); i++) {
+            char c = (char)tolower((unsigned char)app_or_entry[i]);
+            if (c == ' ' || c == '_') {
+                if (dj > 0 && dashed[dj-1] != '-') dashed[dj++] = '-';
+            } else if (isalnum((unsigned char)c) || c == '-' || c == '.') {
+                dashed[dj++] = c;
+            }
+        }
+        dashed[dj] = '\0';
+        if (dashed[0] != '\0' && strcasecmp(dashed, app_or_entry) != 0) {
+            snprintf(target_names[target_count++], sizeof(target_names[0]), "%s.desktop", dashed);
+        }
+    }
+
+    for (int d = 0; d < dir_count; d++) {
+        for (int t = 0; t < target_count; t++) {
+            char dpath[1024];
+            snprintf(dpath, sizeof(dpath), "%s/%s", app_dirs[d], target_names[t]);
+            if (access(dpath, R_OK) == 0) {
+                FILE *f = fopen(dpath, "r");
+                if (f) {
+                    char line[512];
+                    bool in_entry = false;
+                    while (fgets(line, sizeof(line), f)) {
+                        char *p = line;
+                        while (isspace((unsigned char)*p)) p++;
+                        if (*p == '[') {
+                            in_entry = (strncmp(p, "[Desktop Entry]", 15) == 0);
+                        } else if (in_entry && strncmp(p, "Icon=", 5) == 0) {
+                            char *val = p + 5;
+                            while (isspace((unsigned char)*val)) val++;
+                            char *end = val + strlen(val) - 1;
+                            while (end > val && isspace((unsigned char)*end)) {
+                                *end = '\0';
+                                end--;
+                            }
+                            snprintf(icon_out, icon_len, "%s", val);
+                            fclose(f);
+                            return true;
+                        }
+                    }
+                    fclose(f);
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+static bool find_icon_file(const char *icon_name, const char *theme, const char *base_dir, char *out, size_t out_len) {
+    static const char *contexts[] = {
+        "apps", "status", "devices", "categories", "actions", "places", "panel", "emblems", "mimetypes", NULL
+    };
+    static const char *sizes[] = {
+        "48x48", "scalable", "32x32", "64x64", "24x24", "128x128", "16x16", "256x256", "512x512", NULL
+    };
+    static const char *exts[] = {
+        ".svg", ".png", ".xpm", NULL
     };
 
-    char buf[512];
-    for (int i = 0; candidates[i] != NULL; i++) {
-        snprintf(buf, sizeof(buf), candidates[i], low_name);
-        if (access(buf, R_OK) == 0) {
-            snprintf(out, out_len, "%s", buf);
-            add_to_icon_cache(name, buf);
-            return;
+    char theme_root[1024];
+    snprintf(theme_root, sizeof(theme_root), "%s/%s", base_dir, theme);
+    struct stat st;
+    if (stat(theme_root, &st) != 0 || !S_ISDIR(st.st_mode)) return false;
+
+    bool has_ext = (strrchr(icon_name, '.') != NULL);
+
+    char path[1536];
+    for (int s = 0; sizes[s] != NULL; s++) {
+        for (int c = 0; contexts[c] != NULL; c++) {
+            if (has_ext) {
+                snprintf(path, sizeof(path), "%s/%s/%s/%s", theme_root, sizes[s], contexts[c], icon_name);
+                if (access(path, R_OK) == 0) {
+                    snprintf(out, out_len, "%s", path);
+                    return true;
+                }
+            } else {
+                for (int e = 0; exts[e] != NULL; e++) {
+                    snprintf(path, sizeof(path), "%s/%s/%s/%s%s", theme_root, sizes[s], contexts[c], icon_name, exts[e]);
+                    if (access(path, R_OK) == 0) {
+                        snprintf(out, out_len, "%s", path);
+                        return true;
+                    }
+                }
+            }
         }
     }
 
-    add_to_icon_cache(name, "");
-    if (out && out_len > 0) out[0] = '\0';
+    if (has_ext) {
+        snprintf(path, sizeof(path), "%s/%s", theme_root, icon_name);
+        if (access(path, R_OK) == 0) {
+            snprintf(out, out_len, "%s", path);
+            return true;
+        }
+    } else {
+        for (int e = 0; exts[e] != NULL; e++) {
+            snprintf(path, sizeof(path), "%s/%s%s", theme_root, icon_name, exts[e]);
+            if (access(path, R_OK) == 0) {
+                snprintf(out, out_len, "%s", path);
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+static void freedesktop_resolve_icon(const char *name_or_path, const char *desktop_hint, char *out, size_t out_len) {
+    if (!out || out_len == 0) return;
+    out[0] = '\0';
+    if ((!name_or_path || name_or_path[0] == '\0') && (!desktop_hint || desktop_hint[0] == '\0')) return;
+
+    if (name_or_path && name_or_path[0] == '/' && access(name_or_path, R_OK) == 0) {
+        snprintf(out, out_len, "%s", name_or_path);
+        return;
+    }
+    if (name_or_path && strncmp(name_or_path, "file://", 7) == 0 && access(name_or_path + 7, R_OK) == 0) {
+        snprintf(out, out_len, "%s", name_or_path + 7);
+        return;
+    }
+
+    char cache_key[128];
+    snprintf(cache_key, sizeof(cache_key), "%s|%s", name_or_path ? name_or_path : "", desktop_hint ? desktop_hint : "");
+    const char *cached = find_in_icon_cache(cache_key);
+    if (cached) {
+        if (cached[0] != '\0') snprintf(out, out_len, "%s", cached);
+        return;
+    }
+
+    char de_icon[128] = {0};
+    if (desktop_hint && desktop_hint[0] != '\0') {
+        lookup_desktop_entry_icon(desktop_hint, de_icon, sizeof(de_icon));
+    }
+    if (de_icon[0] == '\0' && name_or_path && name_or_path[0] != '\0') {
+        lookup_desktop_entry_icon(name_or_path, de_icon, sizeof(de_icon));
+    }
+
+    if (de_icon[0] == '/' && access(de_icon, R_OK) == 0) {
+        snprintf(out, out_len, "%s", de_icon);
+        add_to_icon_cache(cache_key, out);
+        return;
+    }
+
+    char variants[8][128];
+    int v_count = 0;
+
+    if (de_icon[0] != '\0') {
+        snprintf(variants[v_count++], 128, "%s", de_icon);
+    }
+
+    if (name_or_path && name_or_path[0] != '\0') {
+        char low[128];
+        size_t nlen = strlen(name_or_path);
+        if (nlen >= sizeof(low)) nlen = sizeof(low) - 1;
+        for (size_t i = 0; i < nlen; i++) low[i] = (char)tolower((unsigned char)name_or_path[i]);
+        low[nlen] = '\0';
+
+        bool exists = false;
+        for (int i = 0; i < v_count; i++) {
+            if (strcasecmp(variants[i], low) == 0) { exists = true; break; }
+        }
+        if (!exists) snprintf(variants[v_count++], 128, "%s", low);
+
+        char dashed[128] = {0};
+        size_t dj = 0;
+        for (size_t i = 0; i < nlen && dj + 1 < sizeof(dashed); i++) {
+            char c = low[i];
+            if (c == ' ') {
+                if (dj > 0 && dashed[dj-1] != '-') dashed[dj++] = '-';
+            } else {
+                dashed[dj++] = c;
+            }
+        }
+        dashed[dj] = '\0';
+        if (dashed[0] != '\0') {
+            exists = false;
+            for (int i = 0; i < v_count; i++) {
+                if (strcasecmp(variants[i], dashed) == 0) { exists = true; break; }
+            }
+            if (!exists) snprintf(variants[v_count++], 128, "%s", dashed);
+        }
+
+        const char *sp = strchr(low, ' ');
+        if (sp) {
+            char fw[64] = {0};
+            size_t fw_len = sp - low;
+            if (fw_len < sizeof(fw)) {
+                strncpy(fw, low, fw_len);
+                fw[fw_len] = '\0';
+                exists = false;
+                for (int i = 0; i < v_count; i++) {
+                    if (strcasecmp(variants[i], fw) == 0) { exists = true; break; }
+                }
+                if (!exists) snprintf(variants[v_count++], 128, "%s", fw);
+            }
+        }
+
+        if (strstr(low, "org.") == low || strstr(low, "com.") == low) {
+            const char *dot1 = strchr(low, '.');
+            if (dot1) {
+                const char *dot2 = strchr(dot1 + 1, '.');
+                if (dot2) {
+                    char rbase[64] = {0};
+                    size_t blen = dot2 - (dot1 + 1);
+                    if (blen < sizeof(rbase)) {
+                        strncpy(rbase, dot1 + 1, blen);
+                        rbase[blen] = '\0';
+                        exists = false;
+                        for (int i = 0; i < v_count; i++) {
+                            if (strcasecmp(variants[i], rbase) == 0) { exists = true; break; }
+                        }
+                        if (!exists) snprintf(variants[v_count++], 128, "%s", rbase);
+                    }
+                }
+            }
+        }
+    }
+
+    char active_theme[64] = {0};
+    get_configured_icon_theme(active_theme, sizeof(active_theme));
+
+    char themes[16][64];
+    int theme_count = build_theme_hierarchy(active_theme, themes, 16);
+
+    char base_dirs[8][512];
+    int base_count = get_icon_base_dirs(base_dirs, 8);
+
+    for (int v = 0; v < v_count; v++) {
+        for (int t = 0; t < theme_count; t++) {
+            for (int b = 0; b < base_count; b++) {
+                if (find_icon_file(variants[v], themes[t], base_dirs[b], out, out_len)) {
+                    add_to_icon_cache(cache_key, out);
+                    return;
+                }
+            }
+        }
+    }
+
+    const char *pixmaps[] = {
+        "/usr/share/pixmaps/%s.png",
+        "/usr/share/pixmaps/%s.svg",
+        "/usr/local/share/pixmaps/%s.png",
+        "/usr/local/share/pixmaps/%s.svg",
+        NULL
+    };
+    for (int v = 0; v < v_count; v++) {
+        for (int p = 0; pixmaps[p] != NULL; p++) {
+            char pbuf[512];
+            snprintf(pbuf, sizeof(pbuf), pixmaps[p], variants[v]);
+            if (access(pbuf, R_OK) == 0) {
+                snprintf(out, out_len, "%s", pbuf);
+                add_to_icon_cache(cache_key, out);
+                return;
+            }
+        }
+    }
+
+    add_to_icon_cache(cache_key, "");
+}
+
+static void resolve_icon(const char *name, char *out, size_t out_len) {
+    freedesktop_resolve_icon(name, NULL, out, out_len);
 }
 
 static void init_pango_cache(AppState *app) {
@@ -1019,7 +1423,7 @@ static void load_card_assets(NotifCard *c, const char *avatar_filename) {
                 if (access(c->icon_path, R_OK) == 0) {
                     snprintf(notif_img, sizeof(notif_img), "%s", c->icon_path);
                 } else {
-                    resolve_icon(c->icon_path, notif_img, sizeof(notif_img));
+                    freedesktop_resolve_icon(c->icon_path, c->desktop_entry[0] ? c->desktop_entry : NULL, notif_img, sizeof(notif_img));
                 }
             } else {
                 char url[512] = {0};
@@ -1031,9 +1435,12 @@ static void load_card_assets(NotifCard *c, const char *avatar_filename) {
         }
     }
 
-    /* 3. Resolve application icon based on appname */
-    if (c->appname[0] != '\0' && strcasecmp(c->appname, "notify-send") != 0) {
-        resolve_icon(c->appname, app_icon, sizeof(app_icon));
+    /* 3. Resolve application icon based on desktop_entry or appname */
+    if (c->desktop_entry[0] != '\0') {
+        freedesktop_resolve_icon(c->desktop_entry, NULL, app_icon, sizeof(app_icon));
+    }
+    if (app_icon[0] == '\0' && c->appname[0] != '\0' && strcasecmp(c->appname, "notify-send") != 0) {
+        freedesktop_resolve_icon(c->appname, c->desktop_entry[0] ? c->desktop_entry : NULL, app_icon, sizeof(app_icon));
     }
 
     /* 4. Determine if notif_img is an avatar/picture distinct from the application's icon */
@@ -1149,6 +1556,14 @@ static int load_persistent_history(NotifCard *cards, int max_cards) {
         if (j_av && json_is_string(j_av)) {
             avatar_fn = json_string_value(j_av);
             snprintf(c->avatar, sizeof(c->avatar), "%s", avatar_fn);
+        }
+
+        json_t *j_hints = json_object_get(entry, "hints");
+        if (j_hints && json_is_object(j_hints)) {
+            json_t *j_de = json_object_get(j_hints, "desktop-entry");
+            if (j_de && json_is_string(j_de)) {
+                snprintf(c->desktop_entry, sizeof(c->desktop_entry), "%s", json_string_value(j_de));
+            }
         }
 
         clean_notification_body(c->body, c->clean_body, sizeof(c->clean_body));
